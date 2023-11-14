@@ -2,13 +2,16 @@ import { callPopup, extension_prompt_types, getRequestHeaders, saveSettingsDebou
 import { extension_settings } from "../../../extensions.js";
 import { registerDebugFunction } from "../../../power-user.js";
 import { SECRET_KEYS, secret_state, writeSecret } from "../../../secrets.js";
-import { delay } from "../../../utils.js";
+import { trimToEndSentence, trimToStartSentence } from "../../../utils.js";
 
 const storage = new localforage.createInstance({ name: "SillyTavern_WebSearch" });
 const extensionPromptMarker = '___WebSearch___';
 
 const defaultSettings = {
     triggerPhrases: [
+        "search for",
+        "look up",
+        "find me",
         "tell me",
         "explain me",
         "can you",
@@ -255,7 +258,7 @@ async function performSearchRequest(query, options = { useCache: true }) {
                 textBits.push(data.answer_box.translation?.target?.text);
                 break;
             case 'calculator_result':
-                textBits.push(data.answer_box.result);
+                textBits.push(`Answer: ${data.answer_box.result}`);
                 break;
             case 'population_result':
                 textBits.push(`${data.answer_box.place} ${data.answer_box.population}`);
@@ -267,7 +270,7 @@ async function performSearchRequest(query, options = { useCache: true }) {
                 textBits.push(`${data.answer_box.title} ${data.answer_box.exchange} ${data.answer_box.stock} ${data.answer_box.price} ${data.answer_box.currency}`);
                 break;
             case 'weather_result':
-                textBits.push(`${data.answer_box.location} ${data.answer_box.weather} ${data.answer_box.temperature} ${data.answer_box.unit}`);
+                textBits.push(`${data.answer_box.location}; ${data.answer_box.weather}; ${data.answer_box.temperature} ${data.answer_box.unit}`);
                 break;
             case 'flight_duration':
                 textBits.push(data.answer_box.duration);
@@ -305,6 +308,17 @@ async function performSearchRequest(query, options = { useCache: true }) {
 
     for (let i of textBits) {
         if (i) {
+            // Incomplete sentences confuse the model, so we trim them
+            if (i.endsWith('...')) {
+                i = i.slice(0, -3);
+                i = trimToEndSentence(i).trim();
+            }
+
+            if (i.startsWith('...')) {
+                i = i.slice(3);
+                i = trimToStartSentence(i).trim();
+            }
+
             text += i + '\n';
         }
         if (text.length > budget) {
