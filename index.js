@@ -413,7 +413,7 @@ jQuery(async () => {
         const key = await callPopup('<h3>Add a SerpApi key</h3>', 'input', '', { rows: 2 });
 
         if (key) {
-            await writeSecret(SECRET_KEYS.SERPAPI, key);
+            await writeSecret(SECRET_KEYS.SERPAPI, key.trim());
         }
 
         $('#serpapi_key').toggleClass('success', !!secret_state[SECRET_KEYS.SERPAPI]);
