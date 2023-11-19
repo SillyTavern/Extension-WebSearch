@@ -291,15 +291,21 @@ async function performSearchRequest(query, options = { useCache: true }) {
         textBits.push(data.knowledge_graph.description || data.knowledge_graph.snippet || data.knowledge_graph.merchant_description || data.knowledge_graph.title);
     }
 
-    if (Array.isArray(data.organic_results)) {
-        for (let i of data.organic_results.slice(0, 5)) {
-            textBits.push(i.snippet);
-        }
-    }
+    const MAX_RESULTS = 10;
 
-    if (Array.isArray(data.related_questions)) {
-        for (let i of data.related_questions.slice(0, 5)) {
-            textBits.push(i.snippet);
+    for (let i = 0; i < MAX_RESULTS; i++) {
+        if (Array.isArray(data.organic_results)) {
+            const result = data.organic_results[i];
+            if (result) {
+                textBits.push(result.snippet);
+            }
+        }
+
+        if (Array.isArray(data.related_questions)) {
+            const result = data.related_questions[i];
+            if (result) {
+                textBits.push(`${result.question} ${result.snippet}`);
+            }
         }
     }
 

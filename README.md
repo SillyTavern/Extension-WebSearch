@@ -28,5 +28,5 @@ The priority for search results:
 
 1. Answer box
 2. Knowledge graph
-3. Page snippets (max 5)
-4. Relevant questions (max 5)
+3. Page snippets (max 10)
+4. Relevant questions (max 10)
