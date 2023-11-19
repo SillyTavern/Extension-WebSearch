@@ -18,15 +18,18 @@ Get the key here: https://serpapi.com/dashboard
 2. Prompt Budget - sets the maximum capacity of the inserted text (in characters of text, NOT tokens). Rule of thumb: 1 token ~ 3-4 characters, adjust according to your model's context limits. Default = 1500 characters.
 3. Cache Lifetime - how long (in seconds) the search results are cached for your prompt. Default = one week.
 4. Max Words - how many words are included in the search query (including the trigger phrase). Google has a limit of about 32 words per prompt. Default = 10 words.
-5. Trigger Phrases - add phrases that will trigger the search, one by one. It can be anywhere in the message, and the query starts from the trigger word and spans to "Max Words" total. Priority of triggers: first by order in the textbox, then the first one in the user message.
+5. Trigger Phrases - add phrases that will trigger the search, one by one. It can be anywhere in the message, and the query starts from the trigger word and spans to "Max Words" total. To exclude a specific message from processing, it must start with a period, e.g. `.What do you think?`. Priority of triggers: first by order in the textbox, then the first one in the user message.
 6. Insertion Template - how the result gets inserted into the prompt. Supports the usual macro + special macro: `{{query}}` for search query and `{{text}}` for search results.
 7. Injection Position - where the result goes in the prompt. The same options as for the Author's Note: as in-chat injection or before/after system prompt.
 
 ## More info
 
-The priority for search results:
+Search results from the latest query will stay included into the prompt until the next valid query is found.
+If you want to ask additional questions without accidentally triggering the search, start your message with a period.
 
-1. Answer box
-2. Knowledge graph
-3. Page snippets (max 10)
-4. Relevant questions (max 10)
+What can be included in the search result?
+
+1. Answer box. Direct answer to the question.
+2. Knowledge graph. Encyclopedic knowledge about the topic.
+3. Page snippets (max 10). Relevant extracts from the web pages.
+4. Relevant questions (max 10). Questions and answers to similar topics.

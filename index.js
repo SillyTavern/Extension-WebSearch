@@ -93,67 +93,31 @@ async function onWebSearchPrompt(chat) {
         }
 
         // Find the latest user message
-        let message = '';
+        let searchQuery = '';
 
-        for (let i of chat.slice().reverse()) {
-            if (i.is_system) {
+        for (let message of chat.slice().reverse()) {
+            if (message.is_system) {
                 continue;
             }
 
-            if (i.is_user) {
-                message = i.mes;
+            if (message.mes && message.is_user) {
+                const query = extractSearchQuery(message.mes);
+
+                if (!query) {
+                    continue;
+                }
+
+                searchQuery = query;
                 break;
             }
         }
 
-        if (!message) {
+        if (!searchQuery) {
             console.debug('WebSearch: no user message found');
             return;
         }
 
-        message = processInputText(message);
-
-        if (!message) {
-            console.debug('WebSearch: processed message is empty');
-            return;
-        }
-
-        console.log('WebSearch: processed message', message);
-
-        // Find the first index of the trigger phrase in the message
-        const triggerPhrases = extension_settings.websearch.triggerPhrases;
-
-        let triggerPhraseIndex = -1;
-
-        for (let i = 0; i < triggerPhrases.length; i++) {
-            const triggerPhrase = triggerPhrases[i];
-            const indexOf = message.indexOf(triggerPhrase);
-
-            if (indexOf !== -1) {
-                console.debug(`WebSearch: trigger phrase found "${triggerPhrase}" at index ${indexOf}`);
-                triggerPhraseIndex = indexOf;
-                break;
-            }
-        }
-
-        if (triggerPhraseIndex === -1) {
-            console.debug('WebSearch: no trigger phrase found');
-            return;
-        }
-
-        // Extract the relevant part of the message (after the trigger phrase)
-        message = message.substring(triggerPhraseIndex);
-
-        console.log('WebSearch: extracted query', message);
-
-        // Limit the number of words
-        const maxWords = extension_settings.websearch.maxWords;
-
-        message = message.split(' ').slice(0, maxWords).join(' ');
-
-        console.log('WebSearch: query after word limit', message);
-
-        const result = await performSearchRequest(message, { useCache: true });
+        const result = await performSearchRequest(searchQuery, { useCache: true });
 
         if (!result) {
             console.debug('WebSearch: search failed');
@@ -173,7 +137,7 @@ async function onWebSearchPrompt(chat) {
             template += '\n{{text}}';
         }
 
-        const text = substituteParams(template.replace(/{{text}}/i, result).replace(/{{query}}/i, message));
+        const text = substituteParams(template.replace(/{{text}}/i, result).replace(/{{query}}/i, searchQuery));
         setExtensionPrompt(extensionPromptMarker, text, extension_settings.websearch.position, extension_settings.websearch.depth);
         console.log('WebSearch: prompt updated', text);
     } catch (error) {
@@ -181,6 +145,58 @@ async function onWebSearchPrompt(chat) {
     } finally {
         console.log('WebSearch: finished in', Date.now() - startTime, 'ms');
     }
+}
+
+/**
+ * Extracts the search query from the message.
+ * @param {string} message Message to extract the search query from
+ * @returns {string} Search query
+ */
+function extractSearchQuery(message) {
+    if (message && message.trim().startsWith('.')) {
+        console.debug('WebSearch: message starts with a dot, ignoring');
+        return;
+    }
+
+    message = processInputText(message);
+
+    if (!message) {
+        console.debug('WebSearch: processed message is empty');
+        return;
+    }
+
+    console.log('WebSearch: processed message', message);
+
+    // Find the first index of the trigger phrase in the message
+    let triggerPhraseIndex = -1;
+    const triggerPhrases = extension_settings.websearch.triggerPhrases;
+
+    for (let i = 0; i < triggerPhrases.length; i++) {
+        const triggerPhrase = triggerPhrases[i];
+        const indexOf = message.indexOf(triggerPhrase);
+
+        if (indexOf !== -1) {
+            console.debug(`WebSearch: trigger phrase found "${triggerPhrase}" at index ${indexOf}`);
+            triggerPhraseIndex = indexOf;
+            break;
+        }
+    }
+
+    if (triggerPhraseIndex === -1) {
+        console.debug('WebSearch: no trigger phrase found');
+        return;
+    }
+
+    // Extract the relevant part of the message (after the trigger phrase)
+    message = message.substring(triggerPhraseIndex);
+    console.log('WebSearch: extracted query', message);
+
+    // Limit the number of words
+    const maxWords = extension_settings.websearch.maxWords;
+    message = message.split(' ').slice(0, maxWords).join(' ');
+    console.log('WebSearch: query after word limit', message);
+
+    return message;
 }
 
 function processInputText(text) {
@@ -383,6 +399,7 @@ jQuery(async () => {
                     <label for="websearch_max_words">Max Words <small>(per query)</small></label>
                     <input type="number" class="text_pole" id="websearch_max_words" value="" min="1" max="32" step="1">
                     <label for="websearch_trigger_phrases">Trigger Phrases <small>(one per line)</small></label>
+                    <small>If a message starts with a period, it will be ignored.</small>
                     <textarea id="websearch_trigger_phrases" class="text_pole textarea_compact" rows="2"></textarea>
                     <label for="websearch_template">Insertion Template</label>
                     <textarea id="websearch_template" class="text_pole textarea_compact autoSetHeight" rows="2" placeholder="Use {{query}} and {{text}} macro."></textarea>
