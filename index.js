@@ -1,11 +1,17 @@
 import { callPopup, extension_prompt_types, getRequestHeaders, saveSettingsDebounced, setExtensionPrompt, substituteParams } from "../../../../script.js";
-import { extension_settings } from "../../../extensions.js";
+import { doExtrasFetch, extension_settings, getApiUrl, modules } from "../../../extensions.js";
 import { registerDebugFunction } from "../../../power-user.js";
 import { SECRET_KEYS, secret_state, writeSecret } from "../../../secrets.js";
-import { trimToEndSentence, trimToStartSentence } from "../../../utils.js";
+import { registerSlashCommand } from "../../../slash-commands.js";
+import { onlyUnique, trimToEndSentence, trimToStartSentence } from "../../../utils.js";
 
 const storage = new localforage.createInstance({ name: "SillyTavern_WebSearch" });
 const extensionPromptMarker = '___WebSearch___';
+
+const WEBSEARCH_SOURCES = {
+    SERPAPI: 'serpapi',
+    EXTRAS: 'extras',
+};
 
 const defaultSettings = {
     triggerPhrases: [
@@ -68,6 +74,8 @@ const defaultSettings = {
     depth: 2,
     maxWords: 10,
     budget: 1500,
+    source: WEBSEARCH_SOURCES.SERPAPI,
+    extras_engine: 'google',
 };
 
 async function onWebSearchPrompt(chat) {
@@ -87,8 +95,13 @@ async function onWebSearchPrompt(chat) {
         console.debug('WebSearch: resetting the extension prompt');
         setExtensionPrompt(extensionPromptMarker, '', extension_settings.websearch.position, extension_settings.websearch.depth);
 
-        if (!secret_state[SECRET_KEYS.SERPAPI]) {
-            console.debug('WebSearch: no API key found');
+        if (extension_settings.websearch.source === WEBSEARCH_SOURCES.SERPAPI && !secret_state[SECRET_KEYS.SERPAPI]) {
+            console.debug('WebSearch: no SerpApi key found');
+            return;
+        }
+
+        if (extension_settings.websearch.source === WEBSEARCH_SOURCES.EXTRAS && !modules.includes('websearch')) {
+            console.debug('WebSearch: no websearch Extras module');
             return;
         }
 
@@ -199,6 +212,11 @@ function extractSearchQuery(message) {
     return message;
 }
 
+/**
+ * Pre-process search query input text.
+ * @param {string} text Input text
+ * @returns {string} Processed text
+ */
 function processInputText(text) {
     // Convert to lowercase
     text = text.toLowerCase();
@@ -218,24 +236,12 @@ function processInputText(text) {
     return text;
 }
 
-async function performSearchRequest(query, options = { useCache: true }) {
-    // Check if the query is cached
-    const cacheKey = `query_${query}`;
-    const cacheLifetime = extension_settings.websearch.cacheLifetime;
-    const cachedResult = await storage.getItem(cacheKey);
-
-    if (options.useCache && cachedResult) {
-        console.debug('WebSearch: cached result found', cachedResult);
-        // Check if the cache is expired
-        if (cachedResult.timestamp + cacheLifetime * 1000 < Date.now()) {
-            console.debug('WebSearch: cached result is expired, requerying');
-            await storage.removeItem(cacheKey);
-        } else {
-            console.debug('WebSearch: cached result is valid');
-            return cachedResult.text;
-        }
-    }
-
+/**
+ * Performs a search query via SerpApi.
+ * @param {string} query Search query
+ * @returns {Promise<string[]>} Lines of search results.
+ */
+async function doSerpApiQuery(query) {
     // Perform the search
     const result = await fetch('/api/serpapi/search', {
         method: 'POST',
@@ -325,10 +331,79 @@ async function performSearchRequest(query, options = { useCache: true }) {
         }
     }
 
-    let budget = extension_settings.websearch.budget;
+    return textBits;
+}
+
+/**
+ * Performs a search query via Extras API.
+ * @param {string} query Search query
+ * @returns {Promise<string[]>} Lines of search results.
+ */
+async function doExtrasApiQuery(query) {
+    const url = new URL(getApiUrl());
+    url.pathname = '/api/websearch';
+    const result = await doExtrasFetch(url, {
+        method: 'POST',
+        headers: {
+            'Content-Type': 'application/json',
+            'Bypass-Tunnel-Reminder': 'bypass',
+        },
+        body: JSON.stringify({
+            query: query,
+            engine: extension_settings.websearch.extras_engine,
+        }),
+    });
+
+    if (!result.ok) {
+        const text = await result.text();
+        console.debug('WebSearch: search request failed', result.statusText, text);
+        return;
+    }
+
+    const data = await result.json();
+    console.debug('WebSearch: search response', data);
+
+    const textBits = data.results.split('\n');
+    return textBits;
+}
+
+async function performSearchRequest(query, options = { useCache: true }) {
+    // Check if the query is cached
+    const cacheKey = `query_${query}`;
+    const cacheLifetime = extension_settings.websearch.cacheLifetime;
+    const cachedResult = await storage.getItem(cacheKey);
+
+    if (options.useCache && cachedResult) {
+        console.debug('WebSearch: cached result found', cachedResult);
+        // Check if the cache is expired
+        if (cachedResult.timestamp + cacheLifetime * 1000 < Date.now()) {
+            console.debug('WebSearch: cached result is expired, requerying');
+            await storage.removeItem(cacheKey);
+        } else {
+            console.debug('WebSearch: cached result is valid');
+            return cachedResult.text;
+        }
+    }
+
+    /**
+     * @returns {Promise<string[]>}
+     */
+    function callSearchSource() {
+        switch (extension_settings.websearch.source) {
+            case WEBSEARCH_SOURCES.SERPAPI:
+                return doSerpApiQuery(query);
+            case WEBSEARCH_SOURCES.EXTRAS:
+                return doExtrasApiQuery(query);
+            default:
+                throw new Error(`Unrecognized search source: ${extension_settings.websearch.source}`);
+        }
+    }
+
+    const textBits = await callSearchSource();
+    const budget = extension_settings.websearch.budget;
     let text = '';
 
-    for (let i of textBits) {
+    for (let i of textBits.filter(onlyUnique)) {
         if (i) {
             // Incomplete sentences confuse the model, so we trim them
             if (i.endsWith('...')) {
@@ -370,6 +445,12 @@ jQuery(async () => {
         extension_settings.websearch = structuredClone(defaultSettings);
     }
 
+    for (const key of Object.keys(defaultSettings)) {
+        if (extension_settings.websearch[key] === undefined) {
+            extension_settings.websearch[key] = defaultSettings[key];
+        }
+    }
+
     const html = `
     <div class="websearch_settings">
         <div class="inline-drawer">
@@ -379,19 +460,33 @@ jQuery(async () => {
             </div>
             <div class="inline-drawer-content">
                 <div class="flex-container flexFlowColumn">
-                    <div class="flex-container alignItemsBaseline">
-                        <h3 for="serpapi_key" class="flex1">
-                            <a href="https://serpapi.com/" target="_blank">SerpApi Key</a>
-                        </h3>
-                        <div id="serpapi_key" class="menu_button menu_button_icon">
-                            <i class="fa-solid fa-key"></i>
-                            <span>Click to set</span>
-                        </div>
-                    </div>
                     <label class="checkbox_label" for="websearch_enabled">
                         <input type="checkbox" id="websearch_enabled" />
                         <span>Enabled</span>
                     </label>
+                    <label>Source</label>
+                    <select id="websearch_source">
+                        <option value="serpapi">SerpApi</option>
+                        <option value="extras">Extras API</option>
+                    </select>
+                    <div id="serpapi_settings">
+                        <div class="flex-container alignItemsBaseline">
+                            <h4 for="serpapi_key" class="flex1 margin0">
+                                <a href="https://serpapi.com/" target="_blank">SerpApi Key</a>
+                            </h4>
+                            <div id="serpapi_key" class="menu_button menu_button_icon">
+                                <i class="fa-solid fa-key"></i>
+                                <span>Click to set</span>
+                            </div>
+                        </div>
+                    </div>
+                    <div id="websearch_extras_settings">
+                        <label for="websearch_extras_engine">Engine</label>
+                        <select id="websearch_extras_engine">
+                            <option value="google">Google</option>
+                            <option value="duckduckgo">DuckDuckGo</option>
+                        </select>
+                    </div>
                     <label for="websearch_budget">Prompt Budget <small>(text characters)</small></label>
                     <input type="number" class="text_pole" id="websearch_budget" value="">
                     <label for="websearch_cache_lifetime">Cache Lifetime <small>(seconds)</small></label>
@@ -424,11 +519,25 @@ jQuery(async () => {
         </div>
     </div>`;
 
+    function switchSourceSettings() {
+        $('#websearch_extras_settings').toggle(extension_settings.websearch.source === 'extras');
+        $('#serpapi_settings').toggle(extension_settings.websearch.source === 'serpapi');
+    }
+
     $('#extensions_settings2').append(html);
+    $('#websearch_source').on('change', () => {
+        extension_settings.websearch.source = String($('#websearch_source').find(':selected').val());
+        switchSourceSettings();
+        saveSettingsDebounced();
+    });
     $('#websearch_enabled').prop('checked', extension_settings.websearch.enabled);
     $('#websearch_enabled').on('change', () => {
         extension_settings.websearch.enabled = !!$('#websearch_enabled').prop('checked');
         setExtensionPrompt(extensionPromptMarker, '', extension_settings.websearch.position, extension_settings.websearch.depth);
+        saveSettingsDebounced();
+    });
+    $('#websearch_extras_engine').on('change', () => {
+        extension_settings.websearch.extras_engine = String($('#websearch_extras_engine').find(':selected').val());
         saveSettingsDebounced();
     });
     $('#serpapi_key').toggleClass('success', !!secret_state[SECRET_KEYS.SERPAPI]);
@@ -477,6 +586,8 @@ jQuery(async () => {
         saveSettingsDebounced();
     });
 
+    switchSourceSettings();
+
     registerDebugFunction('clearWebSearchCache', 'Clear the WebSearch cache', 'Removes all search results stored in the local cache.', async () => {
         await storage.clear();
         console.log('WebSearch: cache cleared');
@@ -498,4 +609,6 @@ jQuery(async () => {
             toastr.error(String(error), 'WebSearch: test failed');
         }
     });
+
+    registerSlashCommand('websearch', async (_, value) => await performSearchRequest(value, {useCache: true }), [], '<span class="monospace">(query)</span> – performs a web search query', true, true);
 });

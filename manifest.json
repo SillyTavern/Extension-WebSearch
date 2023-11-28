@@ -2,7 +2,9 @@
     "display_name": "WebSearch",
     "loading_order": 100,
     "requires": [],
-    "optional": [],
+    "optional": [
+        "websearch"
+    ],
     "js": "index.js",
     "css": "style.css",
     "author": "Cohee1207",
