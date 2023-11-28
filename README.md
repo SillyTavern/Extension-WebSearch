@@ -1,6 +1,18 @@
 # Extension-WebSearch
 
-Add Google web search results to LLM prompts (requires SerpApi key).
+Add web search results to LLM prompts.
+
+## Available sources
+
+### Extras API
+
+Requires a `websearch` module and Chrome/Firefox web browser installed on the host machine.
+
+Supports Google and DuckDuckGo engines.
+
+### SerpApi
+
+Requires SerpApi key and provides access to Google search.
 
 Get the key here: https://serpapi.com/dashboard
 
