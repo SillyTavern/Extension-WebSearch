@@ -185,7 +185,7 @@ function extractSearchQuery(message) {
     const triggerPhrases = extension_settings.websearch.triggerPhrases;
 
     for (let i = 0; i < triggerPhrases.length; i++) {
-        const triggerPhrase = triggerPhrases[i];
+        const triggerPhrase = triggerPhrases[i].toLowerCase();
         const indexOf = message.indexOf(triggerPhrase);
 
         if (indexOf !== -1) {
@@ -525,6 +525,7 @@ jQuery(async () => {
     }
 
     $('#extensions_settings2').append(html);
+    $('#websearch_source').val(extension_settings.websearch.source);
     $('#websearch_source').on('change', () => {
         extension_settings.websearch.source = String($('#websearch_source').find(':selected').val());
         switchSourceSettings();
@@ -536,6 +537,7 @@ jQuery(async () => {
         setExtensionPrompt(extensionPromptMarker, '', extension_settings.websearch.position, extension_settings.websearch.depth);
         saveSettingsDebounced();
     });
+    $('#websearch_extras_engine').val(extension_settings.websearch.extras_engine);
     $('#websearch_extras_engine').on('change', () => {
         extension_settings.websearch.extras_engine = String($('#websearch_extras_engine').find(':selected').val());
         saveSettingsDebounced();
