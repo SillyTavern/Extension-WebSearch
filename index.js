@@ -182,6 +182,7 @@ function extractSearchQuery(message) {
 
     // Find the first index of the trigger phrase in the message
     let triggerPhraseIndex = -1;
+    let triggerPhraseActual = '';
     const triggerPhrases = extension_settings.websearch.triggerPhrases;
 
     for (let i = 0; i < triggerPhrases.length; i++) {
@@ -191,6 +192,7 @@ function extractSearchQuery(message) {
         if (indexOf !== -1) {
             console.debug(`WebSearch: trigger phrase found "${triggerPhrase}" at index ${indexOf}`);
             triggerPhraseIndex = indexOf;
+            triggerPhraseActual = triggerPhrase;
             break;
         }
     }
@@ -201,7 +203,7 @@ function extractSearchQuery(message) {
     }
 
     // Extract the relevant part of the message (after the trigger phrase)
-    message = message.substring(triggerPhraseIndex);
+    message = message.substring(triggerPhraseIndex + triggerPhraseActual.length).trim();
     console.log('WebSearch: extracted query', message);
 
     // Limit the number of words
