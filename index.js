@@ -390,16 +390,21 @@ async function performSearchRequest(query, options = { useCache: true }) {
     /**
      * @returns {Promise<string[]>}
      */
-    function callSearchSource() {
-        switch (extension_settings.websearch.source) {
-            case WEBSEARCH_SOURCES.SERPAPI:
-                return doSerpApiQuery(query);
-            case WEBSEARCH_SOURCES.EXTRAS:
-                return doExtrasApiQuery(query);
-            default:
-                throw new Error(`Unrecognized search source: ${extension_settings.websearch.source}`);
+    async function callSearchSource() {
+        try {
+            switch (extension_settings.websearch.source) {
+                case WEBSEARCH_SOURCES.SERPAPI:
+                    return await doSerpApiQuery(query);
+                case WEBSEARCH_SOURCES.EXTRAS:
+                    return await doExtrasApiQuery(query);
+                default:
+                    throw new Error(`Unrecognized search source: ${extension_settings.websearch.source}`);
+            }
+        } catch (error) {
+            console.error('WebSearch: search failed', error);
+            return [];
         }
-    }
+     }
 
     const textBits = await callSearchSource();
     const budget = extension_settings.websearch.budget;
@@ -427,7 +432,7 @@ async function performSearchRequest(query, options = { useCache: true }) {
 
     if (!text) {
         console.debug('WebSearch: search produced no text');
-        return;
+        return '';
     }
 
     console.log(`WebSearch: extracted text (length = ${text.length}, budget = ${budget})`, text);
