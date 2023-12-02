@@ -1,11 +1,11 @@
-import { callPopup, extension_prompt_types, getRequestHeaders, saveSettingsDebounced, setExtensionPrompt, substituteParams } from "../../../../script.js";
-import { doExtrasFetch, extension_settings, getApiUrl, modules } from "../../../extensions.js";
-import { registerDebugFunction } from "../../../power-user.js";
-import { SECRET_KEYS, secret_state, writeSecret } from "../../../secrets.js";
-import { registerSlashCommand } from "../../../slash-commands.js";
-import { onlyUnique, trimToEndSentence, trimToStartSentence } from "../../../utils.js";
+import { callPopup, extension_prompt_types, getRequestHeaders, saveSettingsDebounced, setExtensionPrompt, substituteParams } from '../../../../script.js';
+import { doExtrasFetch, extension_settings, getApiUrl, modules } from '../../../extensions.js';
+import { registerDebugFunction } from '../../../power-user.js';
+import { SECRET_KEYS, secret_state, writeSecret } from '../../../secrets.js';
+import { registerSlashCommand } from '../../../slash-commands.js';
+import { onlyUnique, trimToEndSentence, trimToStartSentence } from '../../../utils.js';
 
-const storage = new localforage.createInstance({ name: "SillyTavern_WebSearch" });
+const storage = new localforage.createInstance({ name: 'SillyTavern_WebSearch' });
 const extensionPromptMarker = '___WebSearch___';
 
 const WEBSEARCH_SOURCES = {
@@ -15,58 +15,58 @@ const WEBSEARCH_SOURCES = {
 
 const defaultSettings = {
     triggerPhrases: [
-        "search for",
-        "look up",
-        "find me",
-        "tell me",
-        "explain me",
-        "can you",
-        "how to",
-        "how is",
-        "how do you",
-        "ways to",
-        "who is",
-        "who are",
-        "who was",
-        "who were",
-        "who did",
-        "what is",
-        "what's",
-        "what are",
-        "what're",
-        "what was",
-        "what were",
-        "what did",
-        "what do",
-        "where are",
-        "where're",
-        "where's",
-        "where is",
-        "where was",
-        "where were",
-        "where did",
-        "where do",
-        "where does",
-        "where can",
-        "how do i",
-        "where do i",
-        "how much",
-        "definition of",
-        "what happened",
-        "why does",
-        "why do",
-        "why did",
-        "why is",
-        "why are",
-        "why were",
-        "when does",
-        "when do",
-        "when did",
-        "when is",
-        "when was",
-        "when were",
-        "how does",
-        "meaning of",
+        'search for',
+        'look up',
+        'find me',
+        'tell me',
+        'explain me',
+        'can you',
+        'how to',
+        'how is',
+        'how do you',
+        'ways to',
+        'who is',
+        'who are',
+        'who was',
+        'who were',
+        'who did',
+        'what is',
+        'what\'s',
+        'what are',
+        'what\'re',
+        'what was',
+        'what were',
+        'what did',
+        'what do',
+        'where are',
+        'where\'re',
+        'where\'s',
+        'where is',
+        'where was',
+        'where were',
+        'where did',
+        'where do',
+        'where does',
+        'where can',
+        'how do i',
+        'where do i',
+        'how much',
+        'definition of',
+        'what happened',
+        'why does',
+        'why do',
+        'why did',
+        'why is',
+        'why are',
+        'why were',
+        'when does',
+        'when do',
+        'when did',
+        'when is',
+        'when was',
+        'when were',
+        'how does',
+        'meaning of',
     ],
     insertionTemplate: '***\nRelevant information from the web ({{query}}):\n{{text}}\n***',
     cacheLifetime: 60 * 60 * 24 * 7, // 1 week
@@ -404,7 +404,7 @@ async function performSearchRequest(query, options = { useCache: true }) {
             console.error('WebSearch: search failed', error);
             return [];
         }
-     }
+    }
 
     const textBits = await callSearchSource();
     const budget = extension_settings.websearch.budget;
