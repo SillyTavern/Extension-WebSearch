@@ -619,5 +619,5 @@ jQuery(async () => {
         }
     });
 
-    registerSlashCommand('websearch', async (_, value) => await performSearchRequest(value, {useCache: true }), [], '<span class="monospace">(query)</span> – performs a web search query', true, true);
+    registerSlashCommand('websearch', async (_, value) => await performSearchRequest(value, { useCache: true }), [], '<span class="monospace">(query)</span> – performs a web search query', true, true);
 });
