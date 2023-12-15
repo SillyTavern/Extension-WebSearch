@@ -1,9 +1,10 @@
-import { callPopup, extension_prompt_types, getRequestHeaders, saveSettingsDebounced, setExtensionPrompt, substituteParams } from '../../../../script.js';
-import { doExtrasFetch, extension_settings, getApiUrl, modules } from '../../../extensions.js';
+import { appendMediaToMessage, callPopup, extension_prompt_types, getRequestHeaders, saveSettingsDebounced, setExtensionPrompt, substituteParams } from '../../../../script.js';
+import { appendFileContent, uploadFileAttachment } from '../../../chats.js';
+import { doExtrasFetch, extension_settings, getApiUrl, getContext, modules } from '../../../extensions.js';
 import { registerDebugFunction } from '../../../power-user.js';
 import { SECRET_KEYS, secret_state, writeSecret } from '../../../secrets.js';
 import { registerSlashCommand } from '../../../slash-commands.js';
-import { onlyUnique, trimToEndSentence, trimToStartSentence } from '../../../utils.js';
+import { extractTextFromHTML, isFalseBoolean, isTrueBoolean, onlyUnique, trimToEndSentence, trimToStartSentence } from '../../../utils.js';
 
 const storage = new localforage.createInstance({ name: 'SillyTavern_WebSearch' });
 const extensionPromptMarker = '___WebSearch___';
@@ -76,6 +77,16 @@ const defaultSettings = {
     budget: 1500,
     source: WEBSEARCH_SOURCES.SERPAPI,
     extras_engine: 'google',
+    visit_enabled: false,
+    visit_count: 3,
+    visit_file_header: `Web search results for "{{query}}"\n\n`,
+    visit_block_header: `---\nInformation from {{link}}\n\n{{text}}\n\n`,
+    visit_blacklist: [
+        'youtube.com',
+        'twitter.com',
+        'facebook.com',
+        'instagram.com',
+    ],
 };
 
 async function onWebSearchPrompt(chat) {
@@ -107,6 +118,7 @@ async function onWebSearchPrompt(chat) {
 
         // Find the latest user message
         let searchQuery = '';
+        let triggerMessage = null;
 
         for (let message of chat.slice().reverse()) {
             if (message.is_system) {
@@ -121,6 +133,7 @@ async function onWebSearchPrompt(chat) {
                 }
 
                 searchQuery = query;
+                triggerMessage = message;
                 break;
             }
         }
@@ -130,11 +143,21 @@ async function onWebSearchPrompt(chat) {
             return;
         }
 
-        const result = await performSearchRequest(searchQuery, { useCache: true });
+        const { text, links } = await performSearchRequest(searchQuery, { useCache: true });
 
-        if (!result) {
+        if (!text) {
             console.debug('WebSearch: search failed');
             return;
+        }
+
+        if (extension_settings.websearch.visit_enabled && triggerMessage && Array.isArray(links) && links.length > 0) {
+            const messageId = Number(triggerMessage.index);
+            const visitResult = await visitLinksAndAttachToMessage(searchQuery, links, messageId);
+
+            if (visitResult && visitResult.file) {
+                triggerMessage.extra = Object.assign((triggerMessage.extra || {}), { file: visitResult.file });
+                triggerMessage.mes = await appendFileContent(triggerMessage, triggerMessage.mes);
+            }
         }
 
         // Insert the result into the prompt
@@ -150,9 +173,9 @@ async function onWebSearchPrompt(chat) {
             template += '\n{{text}}';
         }
 
-        const text = substituteParams(template.replace(/{{text}}/i, result).replace(/{{query}}/i, searchQuery));
-        setExtensionPrompt(extensionPromptMarker, text, extension_settings.websearch.position, extension_settings.websearch.depth);
-        console.log('WebSearch: prompt updated', text);
+        const extensionPrompt = substituteParams(template.replace(/{{text}}/i, text).replace(/{{query}}/i, searchQuery));
+        setExtensionPrompt(extensionPromptMarker, extensionPrompt, extension_settings.websearch.position, extension_settings.websearch.depth);
+        console.log('WebSearch: prompt updated', extensionPrompt);
     } catch (error) {
         console.error('WebSearch: error while processing the request', error);
     } finally {
@@ -223,7 +246,7 @@ function processInputText(text) {
     // Convert to lowercase
     text = text.toLowerCase();
     // Remove punctuation
-    text = text.replace(/[\\.,@#!?$%&;:{}=_`~\[\]]/g, '');
+    text = text.replace(/[\\.,@#!?$%&;:{}=_`~[\]]/g, '');
     // Remove double quotes (including region-specific ones)
     text = text.replace(/["“”]/g, '');
     // Remove carriage returns
@@ -239,9 +262,176 @@ function processInputText(text) {
 }
 
 /**
+ * Checks if the provided link is allowed to be visited or blacklisted.
+ * @param {string} link Link to check
+ * @returns {boolean} Whether the link is allowed
+ */
+function isAllowedUrl(link) {
+    try {
+        const url = new URL(link);
+        const isBlacklisted = extension_settings.websearch.visit_blacklist.some(y => url.hostname.includes(y));
+        if (isBlacklisted) {
+            console.debug('WebSearch: blacklisted link', link);
+        }
+        return !isBlacklisted;
+    } catch (error) {
+        console.debug('WebSearch: invalid link', link);
+        return false;
+    }
+}
+
+/**
+ * Visits the provided web links and extracts the text from the resulting HTML.
+ * @param {string} query Search query
+ * @param {string[]} links Array of links to visit
+ * @returns {Promise<string>} Extracted text
+ */
+async function visitLinks(query, links) {
+    if (!Array.isArray(links)) {
+        console.debug('WebSearch: not an array of links');
+        return '';
+    }
+
+    links = links.filter(isAllowedUrl);
+
+    if (links.length === 0) {
+        console.debug('WebSearch: no links to visit');
+        return '';
+    }
+
+    const visitCount = extension_settings.websearch.visit_count;
+    const visitPromises = [];
+
+    for (let i = 0; i < Math.min(visitCount, links.length); i++) {
+        const link = links[i];
+        visitPromises.push(visitLink(link));
+    }
+
+    const visitResult = await Promise.allSettled(visitPromises);
+
+    let linkResult = '';
+
+    for (let result of visitResult) {
+        if (result.status === 'fulfilled' && result.value) {
+            const { link, text } = result.value;
+
+            if (text) {
+                linkResult += substituteParams(extension_settings.websearch.visit_block_header.replace(/{{query}}/i, query).replace(/{{link}}/i, link).replace(/{{text}}/i, text));
+            }
+        }
+    }
+
+    if (!linkResult) {
+        console.debug('WebSearch: no text to attach');
+        return '';
+    }
+
+    const fileHeader = substituteParams(extension_settings.websearch.visit_file_header.replace(/{{query}}/i, query));
+    const fileText = fileHeader + linkResult;
+    return fileText;
+}
+
+/**
+ * Visits the provided web links and attaches the resulting text to the chat as a file.
+ * @param {string} query Search query
+ * @param {string[]} links Web links to visit
+ * @param {number} messageId Message ID that triggered the search
+ * @returns {Promise<{fileContent: string, file: object}>} File content and file object
+ */
+async function visitLinksAndAttachToMessage(query, links, messageId) {
+    if (isNaN(messageId)) {
+        console.debug('WebSearch: invalid message ID');
+        return;
+    }
+
+    const context = getContext();
+    const message = context.chat[messageId];
+
+    if (!message) {
+        console.debug('WebSearch: failed to find the message');
+        return;
+    }
+
+    if (message?.extra?.file) {
+        console.debug('WebSearch: message already has a file attachment');
+        return;
+    }
+
+    if (!message.extra) {
+        message.extra = {};
+    }
+
+    try {
+        const fileText = await visitLinks(query, links);
+
+        if (!fileText) {
+            return;
+        }
+
+        const fileName = `websearch_${sluggify(query)}_${Date.now()}.txt`;
+        const base64Data = window.btoa(unescape(encodeURIComponent(fileText)));
+        const fileUrl = await uploadFileAttachment(fileName, base64Data);
+
+        if (!fileUrl) {
+            console.debug('WebSearch: failed to upload the file');
+            return;
+        }
+
+        message.extra.file = {
+            url: fileUrl,
+            size: fileText.length,
+            name: fileName,
+        };
+
+        const messageElement = $(`.mes[mesid="${messageId}"]`);
+
+        if (messageElement.length === 0) {
+            console.debug('WebSearch: failed to find the message element');
+            return;
+        }
+
+        appendMediaToMessage(message, messageElement);
+        return { fileContent: fileText, file: message.extra.file };
+    } catch (error) {
+        console.error('WebSearch: failed to attach the file', error);
+    }
+}
+
+function sluggify(text) {
+    return text.toLowerCase().replace(/[^a-z0-9]+/g, '-').substring(0, 32);
+}
+
+/**
+ * Visits the provided web link and extracts the text from the resulting HTML.
+ * @param {string} link Web link to visit
+ * @returns {Promise<{link: string, text:string}>} Extracted text
+ */
+async function visitLink(link) {
+    try {
+        const result = await fetch('/api/serpapi/visit', {
+            method: 'POST',
+            headers: getRequestHeaders(),
+            body: JSON.stringify({ url: link }),
+        });
+
+        if (!result.ok) {
+            console.debug(`WebSearch: visit request failed with status ${result.statusText}`, link);
+            return;
+        }
+
+        const data = await result.blob();
+        const text = await extractTextFromHTML(data, 'p'); // Only extract text from <p> tags
+        console.debug('WebSearch: visit result', link, text);
+        return { link, text };
+    } catch (error) {
+        console.error('WebSearch: visit failed', error);
+    }
+}
+
+/**
  * Performs a search query via SerpApi.
  * @param {string} query Search query
- * @returns {Promise<string[]>} Lines of search results.
+ * @returns {Promise<{textBits: string[], links: string[]}>} Lines of search results.
  */
 async function doSerpApiQuery(query) {
     // Perform the search
@@ -263,6 +453,11 @@ async function doSerpApiQuery(query) {
     // Extract the relevant information
     // Order: 1. Answer Box, 2. Knowledge Graph, 3. Organic Results (max 5), 4. Related Questions (max 5)
     let textBits = [];
+    let links = [];
+
+    if (Array.isArray(data.organic_results)) {
+        links.push(...data.organic_results.map(x => x.link).filter(x => x));
+    }
 
     if (data.answer_box) {
         switch (data.answer_box.type) {
@@ -333,13 +528,13 @@ async function doSerpApiQuery(query) {
         }
     }
 
-    return textBits;
+    return { textBits, links };
 }
 
 /**
  * Performs a search query via Extras API.
  * @param {string} query Search query
- * @returns {Promise<string[]>} Lines of search results.
+ * @returns {Promise<{textBits: string[], links: string[]}>} Lines of search results.
  */
 async function doExtrasApiQuery(query) {
     const url = new URL(getApiUrl());
@@ -366,9 +561,17 @@ async function doExtrasApiQuery(query) {
     console.debug('WebSearch: search response', data);
 
     const textBits = data.results.split('\n');
-    return textBits;
+    const links = Array.isArray(data.links) ? data.links : [];
+    return { textBits, links };
 }
 
+/**
+ *
+ * @param {string} query Search query
+ * @param {SearchRequestOptions} options Search request options
+ * @typedef {{useCache?: boolean}} SearchRequestOptions
+ * @returns {Promise<{text:string, links: string[]}>} Extracted text
+ */
 async function performSearchRequest(query, options = { useCache: true }) {
     // Check if the query is cached
     const cacheKey = `query_${query}`;
@@ -383,12 +586,12 @@ async function performSearchRequest(query, options = { useCache: true }) {
             await storage.removeItem(cacheKey);
         } else {
             console.debug('WebSearch: cached result is valid');
-            return cachedResult.text;
+            return { text: cachedResult.text, links: cachedResult.links };
         }
     }
 
     /**
-     * @returns {Promise<string[]>}
+     * @returns {Promise<{textBits: string[], links: string[]}>}
      */
     async function callSearchSource() {
         try {
@@ -402,11 +605,11 @@ async function performSearchRequest(query, options = { useCache: true }) {
             }
         } catch (error) {
             console.error('WebSearch: search failed', error);
-            return [];
+            return { textBits: [], links: [] };
         }
     }
 
-    const textBits = await callSearchSource();
+    const { textBits, links } = await callSearchSource();
     const budget = extension_settings.websearch.budget;
     let text = '';
 
@@ -432,17 +635,17 @@ async function performSearchRequest(query, options = { useCache: true }) {
 
     if (!text) {
         console.debug('WebSearch: search produced no text');
-        return '';
+        return { text: '', links: [] };
     }
 
     console.log(`WebSearch: extracted text (length = ${text.length}, budget = ${budget})`, text);
 
     // Save the result to cache
     if (options.useCache) {
-        await storage.setItem(cacheKey, { text: text, timestamp: Date.now() });
+        await storage.setItem(cacheKey, { text: text, links: links, timestamp: Date.now() });
     }
 
-    return text;
+    return { text, links };
 }
 
 window['WebSearch_Intercept'] = onWebSearchPrompt;
@@ -494,6 +697,21 @@ jQuery(async () => {
                             <option value="duckduckgo">DuckDuckGo</option>
                         </select>
                     </div>
+                    <hr>
+                    <label class="checkbox_label" for="websearch_visit_enabled">
+                        <input type="checkbox" id="websearch_visit_enabled" />
+                        <span>Visit Links</span>
+                    </label>
+                    <small>Text will be extracted from the visited search result pages and saved to a file attachment.</small>
+                    <label for="websearch_visit_count">Visit Count <small>(max per query)</small></label>
+                    <input type="number" class="text_pole" id="websearch_visit_count" value="" min="0" max="10" step="1">
+                    <label for="websearch_visit_blacklist">Visit Domain Blacklist <small>(one per line)</small></label>
+                    <textarea id="websearch_visit_blacklist" class="text_pole textarea_compact" rows="4"></textarea>
+                    <label for="websearch_file_header">File Header</label>
+                    <textarea id="websearch_file_header" class="text_pole textarea_compact autoSetHeight" rows="2" placeholder="Use {{query}} macro."></textarea>
+                    <label for="websearch_block_header">Block Header</label>
+                    <textarea id="websearch_block_header" class="text_pole textarea_compact autoSetHeight" rows="2" placeholder="Use {{link}} and {{text}} macros."></textarea>
+                    <hr>
                     <label for="websearch_budget">Prompt Budget <small>(text characters)</small></label>
                     <input type="number" class="text_pole" id="websearch_budget" value="">
                     <label for="websearch_cache_lifetime">Cache Lifetime <small>(seconds)</small></label>
@@ -502,7 +720,7 @@ jQuery(async () => {
                     <input type="number" class="text_pole" id="websearch_max_words" value="" min="1" max="32" step="1">
                     <label for="websearch_trigger_phrases">Trigger Phrases <small>(one per line)</small></label>
                     <small>If a message starts with a period, it will be ignored.</small>
-                    <textarea id="websearch_trigger_phrases" class="text_pole textarea_compact" rows="2"></textarea>
+                    <textarea id="websearch_trigger_phrases" class="text_pole textarea_compact" rows="4"></textarea>
                     <label for="websearch_template">Insertion Template</label>
                     <textarea id="websearch_template" class="text_pole textarea_compact autoSetHeight" rows="2" placeholder="Use {{query}} and {{text}} macro."></textarea>
                     <label for="websearch_position">Injection Position</label>
@@ -594,6 +812,31 @@ jQuery(async () => {
         extension_settings.websearch.depth = Number($('#websearch_depth').val());
         saveSettingsDebounced();
     });
+    $('#websearch_visit_enabled').prop('checked', extension_settings.websearch.visit_enabled);
+    $('#websearch_visit_enabled').on('change', () => {
+        extension_settings.websearch.visit_enabled = !!$('#websearch_visit_enabled').prop('checked');
+        saveSettingsDebounced();
+    });
+    $('#websearch_visit_count').val(extension_settings.websearch.visit_count);
+    $('#websearch_visit_count').on('input', () => {
+        extension_settings.websearch.visit_count = Number($('#websearch_visit_count').val());
+        saveSettingsDebounced();
+    });
+    $('#websearch_visit_blacklist').val(extension_settings.websearch.visit_blacklist.join('\n'));
+    $('#websearch_visit_blacklist').on('input', () => {
+        extension_settings.websearch.visit_blacklist = String($('#websearch_visit_blacklist').val()).split('\n');
+        saveSettingsDebounced();
+    });
+    $('#websearch_file_header').val(extension_settings.websearch.visit_file_header);
+    $('#websearch_file_header').on('input', () => {
+        extension_settings.websearch.visit_file_header = String($('#websearch_file_header').val());
+        saveSettingsDebounced();
+    });
+    $('#websearch_block_header').val(extension_settings.websearch.visit_block_header);
+    $('#websearch_block_header').on('input', () => {
+        extension_settings.websearch.visit_block_header = String($('#websearch_block_header').val());
+        saveSettingsDebounced();
+    });
 
     switchSourceSettings();
 
@@ -612,12 +855,36 @@ jQuery(async () => {
             }
 
             const result = await performSearchRequest(text, { useCache: false });
-            console.log('WebSearch: test result', text, result);
-            alert(result);
+            console.log('WebSearch: test result', text, result.text, result.links);
+            alert(result.text);
         } catch (error) {
             toastr.error(String(error), 'WebSearch: test failed');
         }
     });
 
-    registerSlashCommand('websearch', async (_, value) => await performSearchRequest(value, { useCache: true }), [], '<span class="monospace">(query)</span> – performs a web search query', true, true);
+    registerSlashCommand('websearch', async (args, query) => {
+        const includeSnippets = !isFalseBoolean(args.snippets);
+        const includeLinks = isTrueBoolean(args.links);
+
+        if (!query) {
+            toastr.warning('No search query specified');
+            return '';
+        }
+
+        if (!includeSnippets && !includeLinks) {
+            toastr.warning('No search result type specified');
+            return '';
+        }
+
+        const result = await performSearchRequest(query, { useCache: true });
+
+        let output = includeSnippets ? result.text : '';
+
+        if (includeLinks && Array.isArray(result.links) && result.links.length > 0) {
+            const visitResult = await visitLinks(query, result.links);
+            output += '\n' + visitResult;
+        }
+
+        return output;
+    }, [], '<span class="monospace">(links=on|off snippets=on|off [query])</span> – performs a web search query. Use named arguments to specify what to return - page snippets (default: on) or full parsed pages (default: off) or both.', true, true);
 });
