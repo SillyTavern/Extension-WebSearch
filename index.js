@@ -114,6 +114,10 @@ async function onWebSearchPrompt(chat) {
             }
 
             if (message.mes && message.is_user) {
+                if (isBreakCondition(message.mes)) {
+                    break;
+                }
+
                 const query = extractSearchQuery(message.mes);
 
                 if (!query) {
@@ -158,6 +162,15 @@ async function onWebSearchPrompt(chat) {
     } finally {
         console.log('WebSearch: finished in', Date.now() - startTime, 'ms');
     }
+}
+
+function isBreakCondition(message) {
+    if (message && message.trim().startsWith('!')) {
+        console.debug('WebSearch: message starts with an exclamation mark, stopping');
+        return true;
+    }
+
+    return false;
 }
 
 /**
