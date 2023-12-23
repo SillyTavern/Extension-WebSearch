@@ -1,6 +1,6 @@
 {
     "display_name": "WebSearch",
-    "loading_order": 100,
+    "loading_order": 50,
     "requires": [],
     "optional": [
         "websearch"
@@ -9,7 +9,7 @@
     "css": "style.css",
     "author": "Cohee1207",
     "generate_interceptor": "WebSearch_Intercept",
-    "version": "1.0.0",
+    "version": "1.2.0",
     "homePage": "https://github.com/SillyTavern/Extension-WebSearch",
     "auto_update": true
 }
