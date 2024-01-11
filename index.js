@@ -1,6 +1,6 @@
 import { appendMediaToMessage, callPopup, extension_prompt_types, getRequestHeaders, saveSettingsDebounced, setExtensionPrompt, substituteParams } from '../../../../script.js';
 import { appendFileContent, uploadFileAttachment } from '../../../chats.js';
-import { doExtrasFetch, extension_settings, getApiUrl, getContext, modules } from '../../../extensions.js';
+import { doExtrasFetch, extension_settings, getApiUrl, getContext, modules, renderExtensionTemplate } from '../../../extensions.js';
 import { registerDebugFunction } from '../../../power-user.js';
 import { SECRET_KEYS, secret_state, writeSecret } from '../../../secrets.js';
 import { registerSlashCommand } from '../../../slash-commands.js';
@@ -79,14 +79,16 @@ const defaultSettings = {
     extras_engine: 'google',
     visit_enabled: false,
     visit_count: 3,
-    visit_file_header: `Web search results for "{{query}}"\n\n`,
-    visit_block_header: `---\nInformation from {{link}}\n\n{{text}}\n\n`,
+    visit_file_header: 'Web search results for "{{query}}"\n\n',
+    visit_block_header: '---\nInformation from {{link}}\n\n{{text}}\n\n',
     visit_blacklist: [
         'youtube.com',
         'twitter.com',
         'facebook.com',
         'instagram.com',
     ],
+    use_backticks: true,
+    use_trigger_phrases: true,
 };
 
 async function onWebSearchPrompt(chat) {
@@ -216,38 +218,53 @@ function extractSearchQuery(message) {
 
     console.log('WebSearch: processed message', message);
 
-    // Find the first index of the trigger phrase in the message
-    let triggerPhraseIndex = -1;
-    let triggerPhraseActual = '';
-    const triggerPhrases = extension_settings.websearch.triggerPhrases;
+    if (extension_settings.websearch.use_backticks) {
+        // Remove triple backtick blocks
+        message = message.replace(/```[^`]+```/gi, '');
+        // Find the first backtick-enclosed substring
+        const match = message.match(/`([^`]+)`/i);
 
-    for (let i = 0; i < triggerPhrases.length; i++) {
-        const triggerPhrase = triggerPhrases[i].toLowerCase();
-        const indexOf = message.indexOf(triggerPhrase);
-
-        if (indexOf !== -1) {
-            console.debug(`WebSearch: trigger phrase found "${triggerPhrase}" at index ${indexOf}`);
-            triggerPhraseIndex = indexOf;
-            triggerPhraseActual = triggerPhrase;
-            break;
+        if (match) {
+            const query = match[1].trim();
+            console.debug('WebSearch: backtick-enclosed substring found', query);
+            return query;
         }
     }
 
-    if (triggerPhraseIndex === -1) {
-        console.debug('WebSearch: no trigger phrase found');
-        return;
+    if (extension_settings.websearch.use_trigger_phrases) {
+        // Find the first index of the trigger phrase in the message
+        let triggerPhraseIndex = -1;
+        let triggerPhraseActual = '';
+        const triggerPhrases = extension_settings.websearch.triggerPhrases;
+
+        for (let i = 0; i < triggerPhrases.length; i++) {
+            const triggerPhrase = triggerPhrases[i].toLowerCase();
+            const indexOf = message.indexOf(triggerPhrase);
+
+            if (indexOf !== -1) {
+                console.debug(`WebSearch: trigger phrase found "${triggerPhrase}" at index ${indexOf}`);
+                triggerPhraseIndex = indexOf;
+                triggerPhraseActual = triggerPhrase;
+                break;
+            }
+        }
+
+        if (triggerPhraseIndex === -1) {
+            console.debug('WebSearch: no trigger phrase found');
+            return;
+        }
+
+        // Extract the relevant part of the message (after the trigger phrase)
+        message = message.substring(triggerPhraseIndex + triggerPhraseActual.length).trim();
+        console.log('WebSearch: extracted query', message);
+
+        // Limit the number of words
+        const maxWords = extension_settings.websearch.maxWords;
+        message = message.split(' ').slice(0, maxWords).join(' ');
+        console.log('WebSearch: query after word limit', message);
+
+        return message;
     }
-
-    // Extract the relevant part of the message (after the trigger phrase)
-    message = message.substring(triggerPhraseIndex + triggerPhraseActual.length).trim();
-    console.log('WebSearch: extracted query', message);
-
-    // Limit the number of words
-    const maxWords = extension_settings.websearch.maxWords;
-    message = message.split(' ').slice(0, maxWords).join(' ');
-    console.log('WebSearch: query after word limit', message);
-
-    return message;
 }
 
 /**
@@ -259,7 +276,7 @@ function processInputText(text) {
     // Convert to lowercase
     text = text.toLowerCase();
     // Remove punctuation
-    text = text.replace(/[\\.,@#!?$%&;:{}=_`~[\]]/g, '');
+    text = text.replace(/[\\.,@#!?$%&;:{}=_~[\]]/g, '');
     // Remove double quotes (including region-specific ones)
     text = text.replace(/["“”]/g, '');
     // Remove carriage returns
@@ -674,88 +691,7 @@ jQuery(async () => {
         }
     }
 
-    const html = `
-    <div class="websearch_settings">
-        <div class="inline-drawer">
-            <div class="inline-drawer-toggle inline-drawer-header">
-                <b>Web Search</b>
-                <div class="inline-drawer-icon fa-solid fa-circle-chevron-down down"></div>
-            </div>
-            <div class="inline-drawer-content">
-                <div class="flex-container flexFlowColumn">
-                    <label class="checkbox_label" for="websearch_enabled">
-                        <input type="checkbox" id="websearch_enabled" />
-                        <span>Enabled</span>
-                    </label>
-                    <label>Source</label>
-                    <select id="websearch_source">
-                        <option value="serpapi">SerpApi</option>
-                        <option value="extras">Extras API</option>
-                    </select>
-                    <div id="serpapi_settings">
-                        <div class="flex-container alignItemsBaseline">
-                            <h4 for="serpapi_key" class="flex1 margin0">
-                                <a href="https://serpapi.com/" target="_blank">SerpApi Key</a>
-                            </h4>
-                            <div id="serpapi_key" class="menu_button menu_button_icon">
-                                <i class="fa-solid fa-key"></i>
-                                <span>Click to set</span>
-                            </div>
-                        </div>
-                    </div>
-                    <div id="websearch_extras_settings">
-                        <label for="websearch_extras_engine">Engine</label>
-                        <select id="websearch_extras_engine">
-                            <option value="google">Google</option>
-                            <option value="duckduckgo">DuckDuckGo</option>
-                        </select>
-                    </div>
-                    <hr>
-                    <label class="checkbox_label" for="websearch_visit_enabled">
-                        <input type="checkbox" id="websearch_visit_enabled" />
-                        <span>Visit Links</span>
-                    </label>
-                    <small>Text will be extracted from the visited search result pages and saved to a file attachment.</small>
-                    <label for="websearch_visit_count">Visit Count <small>(max per query)</small></label>
-                    <input type="number" class="text_pole" id="websearch_visit_count" value="" min="0" max="10" step="1">
-                    <label for="websearch_visit_blacklist">Visit Domain Blacklist <small>(one per line)</small></label>
-                    <textarea id="websearch_visit_blacklist" class="text_pole textarea_compact" rows="4"></textarea>
-                    <label for="websearch_file_header">File Header</label>
-                    <textarea id="websearch_file_header" class="text_pole textarea_compact autoSetHeight" rows="2" placeholder="Use {{query}} macro."></textarea>
-                    <label for="websearch_block_header">Block Header</label>
-                    <textarea id="websearch_block_header" class="text_pole textarea_compact autoSetHeight" rows="2" placeholder="Use {{link}} and {{text}} macros."></textarea>
-                    <hr>
-                    <label for="websearch_budget">Prompt Budget <small>(text characters)</small></label>
-                    <input type="number" class="text_pole" id="websearch_budget" value="">
-                    <label for="websearch_cache_lifetime">Cache Lifetime <small>(seconds)</small></label>
-                    <input type="number" class="text_pole" id="websearch_cache_lifetime" value="">
-                    <label for="websearch_max_words">Max Words <small>(per query)</small></label>
-                    <input type="number" class="text_pole" id="websearch_max_words" value="" min="1" max="32" step="1">
-                    <label for="websearch_trigger_phrases">Trigger Phrases <small>(one per line)</small></label>
-                    <small>If a message starts with a period, it will be ignored.</small>
-                    <textarea id="websearch_trigger_phrases" class="text_pole textarea_compact" rows="4"></textarea>
-                    <label for="websearch_template">Insertion Template</label>
-                    <textarea id="websearch_template" class="text_pole textarea_compact autoSetHeight" rows="2" placeholder="Use {{query}} and {{text}} macro."></textarea>
-                    <label for="websearch_position">Injection Position</label>
-                    <div class="radio_group">
-                        <label>
-                            <input type="radio" name="websearch_position" value="2" />
-                            Before Main Prompt / Story String
-                        </label>
-                        <!--Keep these as 0 and 1 to interface with the setExtensionPrompt function-->
-                        <label>
-                            <input type="radio" name="websearch_position" value="0" />
-                            After Main Prompt / Story String
-                        </label>
-                        <label>
-                            <input type="radio" name="websearch_position" value="1" />
-                            In-chat @ Depth <input id="websearch_depth" class="text_pole widthUnset" type="number" min="0" max="999" />
-                        </label>
-                    </div>
-                </div>
-            </div>
-        </div>
-    </div>`;
+    const html = renderExtensionTemplate('third-party/Extension-WebSearch', 'settings');
 
     function switchSourceSettings() {
         $('#websearch_extras_settings').toggle(extension_settings.websearch.source === 'extras');
@@ -848,6 +784,16 @@ jQuery(async () => {
     $('#websearch_block_header').val(extension_settings.websearch.visit_block_header);
     $('#websearch_block_header').on('input', () => {
         extension_settings.websearch.visit_block_header = String($('#websearch_block_header').val());
+        saveSettingsDebounced();
+    });
+    $('#websearch_use_backticks').prop('checked', extension_settings.websearch.use_backticks);
+    $('#websearch_use_backticks').on('change', () => {
+        extension_settings.websearch.use_backticks = !!$('#websearch_use_backticks').prop('checked');
+        saveSettingsDebounced();
+    });
+    $('#websearch_use_trigger_phrases').prop('checked', extension_settings.websearch.use_trigger_phrases);
+    $('#websearch_use_trigger_phrases').on('change', () => {
+        extension_settings.websearch.use_trigger_phrases = !!$('#websearch_use_trigger_phrases').prop('checked');
         saveSettingsDebounced();
     });
 
