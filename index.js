@@ -12,6 +12,7 @@ const extensionPromptMarker = '___WebSearch___';
 const WEBSEARCH_SOURCES = {
     SERPAPI: 'serpapi',
     EXTRAS: 'extras',
+    PLUGIN: 'plugin',
 };
 
 const defaultSettings = {
@@ -115,6 +116,11 @@ async function onWebSearchPrompt(chat) {
 
         if (extension_settings.websearch.source === WEBSEARCH_SOURCES.EXTRAS && !modules.includes('websearch')) {
             console.debug('WebSearch: no websearch Extras module');
+            return;
+        }
+
+        if (extension_settings.websearch.source === WEBSEARCH_SOURCES.PLUGIN && !(await probeSeleniumSearchPlugin())) {
+            console.debug('WebSearch: no websearch server plugin');
             return;
         }
 
@@ -596,6 +602,58 @@ async function doExtrasApiQuery(query) {
 }
 
 /**
+ * Performs a search query via the Selenium search plugin.
+ * @param {string} query Search query
+ * @returns {Promise<{textBits: string[], links: string[]}>} Lines of search results.
+ */
+async function doSeleniumPluginQuery(query) {
+    const result = await fetch('/api/plugins/selenium/search', {
+        method: 'POST',
+        headers: getRequestHeaders(),
+        body: JSON.stringify({
+            query: query,
+            engine: extension_settings.websearch.extras_engine,
+        }),
+    });
+
+    if (!result.ok) {
+        const text = await result.text();
+        console.debug('WebSearch: search request failed', result.statusText, text);
+        return;
+    }
+
+    const data = await result.json();
+    console.debug('WebSearch: search response', data);
+
+    const textBits = data.results.split('\n');
+    const links = Array.isArray(data.links) ? data.links : [];
+    return { textBits, links };
+}
+
+/**
+ * Probes the Selenium search plugin to check if it's available.
+ * @returns {Promise<boolean>} Whether the plugin is available
+ */
+async function probeSeleniumSearchPlugin() {
+    try {
+        const result = await fetch('/api/plugins/selenium/probe', {
+            method: 'POST',
+            headers: getRequestHeaders(),
+        });
+
+        if (!result.ok) {
+            console.debug('WebSearch: plugin probe failed', result.statusText);
+            return false;
+        }
+
+        return true;
+    } catch (error) {
+        console.error('WebSearch: plugin probe failed', error);
+        return false;
+    }
+}
+
+/**
  *
  * @param {string} query Search query
  * @param {SearchRequestOptions} options Search request options
@@ -630,6 +688,8 @@ async function performSearchRequest(query, options = { useCache: true }) {
                     return await doSerpApiQuery(query);
                 case WEBSEARCH_SOURCES.EXTRAS:
                     return await doExtrasApiQuery(query);
+                case WEBSEARCH_SOURCES.PLUGIN:
+                    return await doSeleniumPluginQuery(query);
                 default:
                     throw new Error(`Unrecognized search source: ${extension_settings.websearch.source}`);
             }
@@ -694,7 +754,7 @@ jQuery(async () => {
     const html = renderExtensionTemplate('third-party/Extension-WebSearch', 'settings');
 
     function switchSourceSettings() {
-        $('#websearch_extras_settings').toggle(extension_settings.websearch.source === 'extras');
+        $('#websearch_extras_settings').toggle(extension_settings.websearch.source === 'extras' || extension_settings.websearch.source === 'plugin');
         $('#serpapi_settings').toggle(extension_settings.websearch.source === 'serpapi');
     }
 
