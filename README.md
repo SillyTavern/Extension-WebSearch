@@ -80,9 +80,16 @@ This extension also provides a `/websearch` slash command to use in STscript. Mo
 Example: /websearch links=off snippets=on how to make a sandwich
 ```
 
-What can be included in the search result?
+### What can be included in the search result?
+
+#### SerpApi
 
 1. Answer box. Direct answer to the question.
 2. Knowledge graph. Encyclopedic knowledge about the topic.
 3. Page snippets (max 10). Relevant extracts from the web pages.
 4. Relevant questions (max 10). Questions and answers to similar topics.
+
+#### Selenium Plugin and Extras API
+
+1. Google - answer box, knowledge graph, page snippets.
+2. DuckDuckGo - page snippets.
