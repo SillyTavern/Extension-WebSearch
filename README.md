@@ -4,6 +4,14 @@ Add web search results to LLM prompts.
 
 ## Available sources
 
+### Selenium Plugin
+
+Requires an official server plugin to be installed and enabled.
+
+See [SillyTavern-WebSearch-Selenium](https://github.com/SillyTavern/SillyTavern-WebSearch-Selenium) for more details.
+
+Supports Google and DuckDuckGo engines.
+
 ### Extras API
 
 Requires a `websearch` module and Chrome/Firefox web browser installed on the host machine.
