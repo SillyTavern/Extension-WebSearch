@@ -1,0 +1,45 @@
+<div class="m-b-1">
+    <div class="flex-container flexFlowColumn">
+        <label for="searchScrapeQuery">
+            Enter a search query:
+        </label>
+        <input type="text" id="searchScrapeQuery" name="searchScrapeQuery" class="text_pole wide100p" placeholder="Search for...">
+        <label for="searchScrapeMaxResults">
+            Max number of results:
+        </label>
+        <input type="number" id="searchScrapeMaxResults" name="searchScrapeMaxResults" class="text_pole wide100p" min="0" max="10" placeholder="Max results...">
+        <label for="searchScrapeSnippets" class="checkbox_label">
+            <input type="checkbox" id="searchScrapeSnippets" name="searchScrapeSnippets" value="true">
+            <span data-i18n="Save snippets">
+                Save page snippets
+            </span>
+        </label>
+        <div class="flex-container flexFlowColumn">
+            <label>
+                Output format:
+            </label>
+            <label class="checkbox_label justifyLeft" for="searchScrapeOutputMulti">
+                <input id="searchScrapeOutputMulti" type="radio" name="searchScrapeOutput" value="multi" checked>
+                <div class="flex-container flexFlowColumn flexNoGap">
+                    <span data-i18n="File per site">
+                        File per site
+                    </span>
+                    <small data-i18n="Each result will be saved as a separate file.">
+                        Each result will be saved as a separate file.
+                    </small>
+                </div>
+            </label>
+            <label class="checkbox_label justifyLeft" for="searchScrapeOutputSingle">
+                <input id="searchScrapeOutputSingle" type="radio" name="searchScrapeOutput" value="single">
+                <div class="flex-container flexFlowColumn flexNoGap">
+                    <span data-i18n="Single file">
+                        Single file
+                    </span>
+                    <small data-i18n="All results will be concatenated into a single file.">
+                        All results will be concatenated into a single file.
+                    </small>
+                </div>
+            </label>
+        </div>
+    </div>
+</div>

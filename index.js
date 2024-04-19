@@ -92,6 +92,25 @@ const defaultSettings = {
     use_trigger_phrases: true,
 };
 
+async function isSearchAvailable() {
+    if (extension_settings.websearch.source === WEBSEARCH_SOURCES.SERPAPI && !secret_state[SECRET_KEYS.SERPAPI]) {
+        console.debug('WebSearch: no SerpApi key found');
+        return false;
+    }
+
+    if (extension_settings.websearch.source === WEBSEARCH_SOURCES.EXTRAS && !modules.includes('websearch')) {
+        console.debug('WebSearch: no websearch Extras module');
+        return false;
+    }
+
+    if (extension_settings.websearch.source === WEBSEARCH_SOURCES.PLUGIN && !(await probeSeleniumSearchPlugin())) {
+        console.debug('WebSearch: no websearch server plugin');
+        return false;
+    }
+
+    return true;
+}
+
 async function onWebSearchPrompt(chat) {
     if (!extension_settings.websearch.enabled) {
         console.debug('WebSearch: extension is disabled');
@@ -109,18 +128,9 @@ async function onWebSearchPrompt(chat) {
         console.debug('WebSearch: resetting the extension prompt');
         setExtensionPrompt(extensionPromptMarker, '', extension_settings.websearch.position, extension_settings.websearch.depth);
 
-        if (extension_settings.websearch.source === WEBSEARCH_SOURCES.SERPAPI && !secret_state[SECRET_KEYS.SERPAPI]) {
-            console.debug('WebSearch: no SerpApi key found');
-            return;
-        }
+        const isAvailable = await isSearchAvailable();
 
-        if (extension_settings.websearch.source === WEBSEARCH_SOURCES.EXTRAS && !modules.includes('websearch')) {
-            console.debug('WebSearch: no websearch Extras module');
-            return;
-        }
-
-        if (extension_settings.websearch.source === WEBSEARCH_SOURCES.PLUGIN && !(await probeSeleniumSearchPlugin())) {
-            console.debug('WebSearch: no websearch server plugin');
+        if (!isAvailable) {
             return;
         }
 
@@ -740,6 +750,129 @@ async function performSearchRequest(query, options = { useCache: true }) {
 
 window['WebSearch_Intercept'] = onWebSearchPrompt;
 
+/**
+ * Provides an interface for the Data Bank to interact with the extension.
+ */
+class WebSearchScraper {
+    constructor() {
+        this.id = 'websearch';
+        this.name = 'Web Search';
+        this.description = 'Perform a web search and download the results.';
+        this.iconClass = 'fa-solid fa-search';
+    }
+
+    /**
+     * Check if the scraper is available.
+     * @returns {Promise<boolean>} Whether the scraper is available
+     */
+    async isAvailable() {
+        return await isSearchAvailable();
+    }
+
+    /**
+     * Scrape file attachments from a webpage.
+     * @returns {Promise<File[]>} File attachments scraped from the webpage
+     */
+    async scrape() {
+        try {
+            const template = $(await renderExtensionTemplate('third-party/Extension-WebSearch', 'search-scrape', {}));
+            let query = '';
+            let maxResults = extension_settings.websearch.visit_count;
+            let output = 'multiple';
+            let snippets = false;
+            template.find('input[name="searchScrapeQuery"]').on('input', function () {
+                query = String($(this).val());
+            });
+            template.find('input[name="searchScrapeMaxResults"]').val(maxResults).on('input', function () {
+                maxResults = Number($(this).val());
+            });
+            template.find('input[name="searchScrapeOutput"]').on('input', function () {
+                output = String($(this).val());
+            });
+            template.find('input[name="searchScrapeSnippets"]').on('change', function () {
+                snippets = $(this).prop('checked');
+            });
+
+            const confirm = await callPopup(template, 'confirm', '', { confirmText: 'Scrape', cancelText: 'Cancel' });
+
+            if (!confirm) {
+                return;
+            }
+
+            const toast = toastr.info('Working, please wait...');
+            const searchResult = await performSearchRequest(query, { useCache: false });
+
+            if (!Array.isArray(searchResult?.links) || searchResult.links.length === 0) {
+                console.debug('WebSearch: no links to scrape');
+                return [];
+            }
+
+            const visitResults = [];
+
+            for (let i = 0; i < searchResult.links.length; i++) {
+                if (i >= maxResults) {
+                    break;
+                }
+
+                const link = searchResult.links[i];
+
+                if (!isAllowedUrl(link)) {
+                    continue;
+                }
+
+                const visitResult = await visitLink(link);
+
+                if (visitResult) {
+                    visitResults.push(visitResult);
+                }
+            }
+
+            const files = [];
+
+            if (snippets) {
+                const fileName = `snippets - ${query} - ${Date.now()}.txt`;
+                const file = new File([searchResult.text], fileName, { type: 'text/plain' });
+                files.push(file);
+            }
+
+            if (output === 'single') {
+                let result = '';
+
+                for (const visitResult of visitResults) {
+                    if (visitResult.text) {
+                        result += substituteParams(extension_settings.websearch.visit_block_header
+                            .replace(/{{query}}/i, query)
+                            .replace(/{{link}}/i, visitResult.link)
+                            .replace(/{{text}}/i, visitResult.text));
+                    }
+                }
+
+                const fileHeader = substituteParams(extension_settings.websearch.visit_file_header.replace(/{{query}}/i, query));
+                const fileText = fileHeader + result;
+                const fileName = `websearch - ${query} - ${Date.now()}.txt`;
+                const file = new File([fileText], fileName, { type: 'text/plain' });
+                files.push(file);
+            }
+
+            if (output === 'multiple') {
+                for (const result of visitResults) {
+                    if (result.text) {
+                        const domain = new URL(result.link).hostname;
+                        const fileName = `${query} - ${domain} - ${Date.now()}.txt`;
+                        const file = new File([result.text], fileName, { type: 'text/plain' });
+                        files.push(file);
+                    }
+                }
+            }
+
+            toastr.clear(toast);
+            return files;
+        } catch (error) {
+            console.error('WebSearch: error while scraping', error);
+        }
+    }
+}
+
 jQuery(async () => {
     if (!extension_settings.websearch) {
         extension_settings.websearch = structuredClone(defaultSettings);
@@ -906,4 +1039,9 @@ jQuery(async () => {
 
         return output;
     }, [], '<span class="monospace">(links=on|off snippets=on|off [query])</span> – performs a web search query. Use named arguments to specify what to return - page snippets (default: on) or full parsed pages (default: off) or both.', true, true);
+
+    const context = getContext();
+    if (typeof context.registerDataBankScraper === 'function') {
+        context.registerDataBankScraper(new WebSearchScraper());
+    }
 });
