@@ -61,16 +61,16 @@ Get the key here: https://serpapi.com/dashboard
 3. Visit Domain Blacklist - site domains to be excluded from visiting. One per line.
 4. File Header - file header template, inserted at the start of the text file, has an additional `{{query}}` macro.
 5. Block Header - link block template, inserted with the parsed content of every link. Use `{{link}}` macro for page URL and `{{text}}` for page content.
-
+6. Save Target - where to save the results of scraping. Possible options: trigger message attachments, or chat attachments of Data Bank (only on release >=1.12.0).
 
 ## More info
 
-Search results from the latest query will stay included into the prompt until the next valid query is found.
+Search results from the latest query will stay included in the prompt until the next valid query is found.
 If you want to ask additional questions without accidentally triggering the search, start your message with a period.
 
-If both backticks and trigger phrases search activation is used, backticks have a higher priority.
+If both backticks and trigger phrases search activation are used, backticks have a higher priority.
 
-To discard all previous queries from processing, start the user message with an exclamation mark, for example a user message `!Now let's talk about...` will discard this and every message above it.
+To discard all previous queries from processing, start the user message with an exclamation mark, for example, a user message `!Now let's talk about...` will discard this and every message above it.
 
 This extension also provides a `/websearch` slash command to use in STscript. More info here: https://docs.sillytavern.app/usage/st-script/
 

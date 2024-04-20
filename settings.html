@@ -78,7 +78,17 @@
                     <input type="checkbox" id="websearch_visit_enabled" />
                     <span>Visit Links</span>
                 </label>
-                <small>Text will be extracted from the visited search result pages and saved to a file attachment.</small>
+                <div class="marginTopBot5">
+                    Text will be extracted from the visited search result pages and saved to:
+                </div>
+                <label for="websearch_visit_target_message" class="checkbox_label">
+                    <input id="websearch_visit_target_message" type="radio" name="websearch_visit_target" value="0" />
+                    <span>Message attachment</span>
+                </label>
+                <label for="websearch_visit_target_databank" class="checkbox_label">
+                    <input id="websearch_visit_target_databank" type="radio" name="websearch_visit_target" value="1" />
+                    <span>Data Bank (chat)</span>
+                </label>
                 <label for="websearch_visit_count">Visit Count <small>(max per query)</small></label>
                 <input type="number" class="text_pole" id="websearch_visit_count" value="" min="0" max="10" step="1">
                 <label for="websearch_visit_blacklist">Visit Domain Blacklist <small>(one per line)</small></label>

@@ -15,6 +15,11 @@ const WEBSEARCH_SOURCES = {
     PLUGIN: 'plugin',
 };
 
+const VISIT_TARGETS = {
+    MESSAGE: 0,
+    DATA_BANK: 1,
+}
+
 const defaultSettings = {
     triggerPhrases: [
         'search for',
@@ -79,6 +84,7 @@ const defaultSettings = {
     source: WEBSEARCH_SOURCES.SERPAPI,
     extras_engine: 'google',
     visit_enabled: false,
+    visit_target: VISIT_TARGETS.MESSAGE,
     visit_count: 3,
     visit_file_header: 'Web search results for "{{query}}"\n\n',
     visit_block_header: '---\nInformation from {{link}}\n\n{{text}}\n\n',
@@ -408,43 +414,90 @@ async function visitLinksAndAttachToMessage(query, links, messageId) {
     }
 
     try {
+        if (extension_settings.websearch.visit_target === VISIT_TARGETS.DATA_BANK) {
+            const fileExists = await isFileExistsInDataBank(query);
+
+            if (fileExists) {
+                return;
+            }
+        }
+
+        const fileName = `websearch - ${query} - ${Date.now()}.txt`;
         const fileText = await visitLinks(query, links);
 
         if (!fileText) {
             return;
         }
 
-        const fileName = `websearch_${sluggify(query)}_${Date.now()}.txt`;
-        const base64Data = window.btoa(unescape(encodeURIComponent(fileText)));
-        const fileUrl = await uploadFileAttachment(fileName, base64Data);
+        if (extension_settings.websearch.visit_target === VISIT_TARGETS.DATA_BANK) {
+            await uploadToDataBank(fileName, fileText);
+        } else {
+            const base64Data = window.btoa(unescape(encodeURIComponent(fileText)));
+            const fileUrl = await uploadFileAttachment(fileName, base64Data);
 
-        if (!fileUrl) {
-            console.debug('WebSearch: failed to upload the file');
-            return;
+            if (!fileUrl) {
+                console.debug('WebSearch: failed to upload the file');
+                return;
+            }
+
+            message.extra.file = {
+                url: fileUrl,
+                size: fileText.length,
+                name: fileName,
+            };
+
+            const messageElement = $(`.mes[mesid="${messageId}"]`);
+
+            if (messageElement.length === 0) {
+                console.debug('WebSearch: failed to find the message element');
+                return;
+            }
+
+            appendMediaToMessage(message, messageElement);
+            return { fileContent: fileText, file: message.extra.file };
         }
-
-        message.extra.file = {
-            url: fileUrl,
-            size: fileText.length,
-            name: fileName,
-        };
-
-        const messageElement = $(`.mes[mesid="${messageId}"]`);
-
-        if (messageElement.length === 0) {
-            console.debug('WebSearch: failed to find the message element');
-            return;
-        }
-
-        appendMediaToMessage(message, messageElement);
-        return { fileContent: fileText, file: message.extra.file };
     } catch (error) {
         console.error('WebSearch: failed to attach the file', error);
     }
 }
 
-function sluggify(text) {
-    return text.toLowerCase().replace(/[^a-z0-9]+/g, '-').substring(0, 32);
+/**
+ * Checks if the file for the search query already exists in the Data Bank.
+ * @param {string} query Search query
+ * @returns {Promise<boolean>} Whether the file exists
+ */
+async function isFileExistsInDataBank(query) {
+    try {
+        const { getDataBankAttachmentsForSource } = await import('../../../chats.js');
+        const attachments = await getDataBankAttachmentsForSource('chat');
+        const existingAttachment = attachments.find(x => x.name.startsWith(`websearch - ${query} - `));
+        if (existingAttachment) {
+            console.debug('WebSearch: file for such query already exists in the Data Bank');
+            return true;
+        }
+        return false;
+    } catch (error) {
+        // Prevent visiting links if the Data Bank is not available
+        toastr.error('Data Bank module is not available');
+        console.error('WebSearch: failed to check if the file exists in the Data Bank', error);
+        return true;
+    }
+}
+
+/**
+ * Uploads the file to the Data Bank.
+ * @param {string} fileName File name
+ * @param {string} fileText File text
+ * @returns {Promise<void>}
+ */
+async function uploadToDataBank(fileName, fileText) {
+    try {
+        const { uploadFileAttachmentToServer } = await import('../../../chats.js');
+        const file = new File([fileText], fileName, { type: 'text/plain' });
+        await uploadFileAttachmentToServer(file, 'chat');
+    } catch (error) {
+        console.error('WebSearch: failed to import the chat module', error);
+    }
 }
 
 /**
@@ -957,6 +1010,11 @@ jQuery(async () => {
     $('#websearch_visit_enabled').prop('checked', extension_settings.websearch.visit_enabled);
     $('#websearch_visit_enabled').on('change', () => {
         extension_settings.websearch.visit_enabled = !!$('#websearch_visit_enabled').prop('checked');
+        saveSettingsDebounced();
+    });
+    $(`input[name="websearch_visit_target"][value="${extension_settings.websearch.visit_target}"]`).prop('checked', true);
+    $('input[name="websearch_visit_target"]').on('input', () => {
+        extension_settings.websearch.visit_target = Number($('input[name="websearch_visit_target"]:checked').val());
         saveSettingsDebounced();
     });
     $('#websearch_visit_count').val(extension_settings.websearch.visit_count);
