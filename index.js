@@ -812,6 +812,7 @@ class WebSearchScraper {
         this.name = 'Web Search';
         this.description = 'Perform a web search and download the results.';
         this.iconClass = 'fa-solid fa-search';
+        this.iconAvailable = true;
     }
 
     /**
