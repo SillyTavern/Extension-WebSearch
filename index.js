@@ -4,7 +4,7 @@ import { doExtrasFetch, extension_settings, getApiUrl, getContext, modules, rend
 import { registerDebugFunction } from '../../../power-user.js';
 import { SECRET_KEYS, secret_state, writeSecret } from '../../../secrets.js';
 import { registerSlashCommand } from '../../../slash-commands.js';
-import { extractTextFromHTML, isFalseBoolean, isTrueBoolean, onlyUnique, trimToEndSentence, trimToStartSentence } from '../../../utils.js';
+import { extractTextFromHTML, isFalseBoolean, isTrueBoolean, onlyUnique, trimToEndSentence, trimToStartSentence, getStringHash } from '../../../utils.js';
 
 const storage = new localforage.createInstance({ name: 'SillyTavern_WebSearch' });
 const extensionPromptMarker = '___WebSearch___';
@@ -433,7 +433,8 @@ async function visitLinksAndAttachToMessage(query, links, messageId) {
             await uploadToDataBank(fileName, fileText);
         } else {
             const base64Data = window.btoa(unescape(encodeURIComponent(fileText)));
-            const fileUrl = await uploadFileAttachment(fileName, base64Data);
+            const uniqueFileName = `${Date.now()}_${getStringHash(fileName)}.txt`;
+            const fileUrl = await uploadFileAttachment(uniqueFileName, base64Data);
 
             if (!fileUrl) {
                 console.debug('WebSearch: failed to upload the file');
