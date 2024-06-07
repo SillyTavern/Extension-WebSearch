@@ -4,7 +4,7 @@ import { doExtrasFetch, extension_settings, getApiUrl, getContext, modules, rend
 import { registerDebugFunction } from '../../../power-user.js';
 import { SECRET_KEYS, secret_state, writeSecret } from '../../../secrets.js';
 import { registerSlashCommand } from '../../../slash-commands.js';
-import { extractTextFromHTML, isFalseBoolean, isTrueBoolean, onlyUnique, trimToEndSentence, trimToStartSentence, getStringHash } from '../../../utils.js';
+import { extractTextFromHTML, isFalseBoolean, isTrueBoolean, onlyUnique, trimToEndSentence, trimToStartSentence, getStringHash, regexFromString } from '../../../utils.js';
 
 const storage = new localforage.createInstance({ name: 'SillyTavern_WebSearch' });
 const extensionPromptMarker = '___WebSearch___';
@@ -19,6 +19,12 @@ const VISIT_TARGETS = {
     MESSAGE: 0,
     DATA_BANK: 1,
 }
+
+/**
+ * @typedef {Object} RegexRule
+ * @property {string} pattern Regular expression pattern
+ * @property {string} query Web search query
+ */
 
 const defaultSettings = {
     triggerPhrases: [
@@ -96,7 +102,42 @@ const defaultSettings = {
     ],
     use_backticks: true,
     use_trigger_phrases: true,
+    use_regex: false,
+    regex: [],
 };
+
+function createRegexRule() {
+    const rule = { pattern: '', query: '' };
+    extension_settings.websearch.regex.push(rule);
+    saveSettingsDebounced();
+    renderRegexRules();
+}
+
+async function renderRegexRules() {
+    $('#websearch_regex_list').empty();
+    for (const rule of extension_settings.websearch.regex) {
+        const template = $(await renderExtensionTemplate('third-party/Extension-WebSearch', 'regex'));
+        template.find('.websearch_regex_pattern').val(rule.pattern).on('input', function () {
+            rule.pattern = String($(this).val());
+            saveSettingsDebounced();
+        });
+        template.find('.websearch_regex_query').val(rule.query).on('input', function () {
+            rule.query = String($(this).val());
+            saveSettingsDebounced();
+        });
+        template.find('.websearch_regex_delete').on('click', () => {
+            if (!confirm('Are you sure?')) {
+                return;
+            }
+
+            const index = extension_settings.websearch.regex.indexOf(rule);
+            extension_settings.websearch.regex.splice(index, 1);
+            saveSettingsDebounced();
+            renderRegexRules();
+        });
+        $('#websearch_regex_list').append(template);
+    }
+}
 
 async function isSearchAvailable() {
     if (extension_settings.websearch.source === WEBSEARCH_SOURCES.SERPAPI && !secret_state[SECRET_KEYS.SERPAPI]) {
@@ -250,6 +291,19 @@ function extractSearchQuery(message) {
             const query = match[1].trim();
             console.debug('WebSearch: backtick-enclosed substring found', query);
             return query;
+        }
+    }
+
+    if (extension_settings.websearch.use_regex) {
+        for (const rule of extension_settings.websearch.regex) {
+            const regex = regexFromString(rule.pattern);
+
+            if (regex && regex.test(message)) {
+                const groups = message.match(regex);
+                const query = substituteParams(rule.query).replace(/\$(\d+)/g, (_, i) => groups[i] || '');
+                console.debug('WebSearch: regex rule matched', rule.pattern, query);
+                return query;
+            }
         }
     }
 
@@ -1049,8 +1103,16 @@ jQuery(async () => {
         extension_settings.websearch.use_trigger_phrases = !!$('#websearch_use_trigger_phrases').prop('checked');
         saveSettingsDebounced();
     });
+    $('#websearch_use_regex').prop('checked', extension_settings.websearch.use_regex);
+    $('#websearch_use_regex').on('change', () => {
+        extension_settings.websearch.use_regex = !!$('#websearch_use_regex').prop('checked');
+        saveSettingsDebounced();
+    });
+
+    $('#websearch_regex_add').on('click', createRegexRule);
 
     switchSourceSettings();
+    await renderRegexRules();
 
     registerDebugFunction('clearWebSearchCache', 'Clear the WebSearch cache', 'Removes all search results stored in the local cache.', async () => {
         await storage.clear();

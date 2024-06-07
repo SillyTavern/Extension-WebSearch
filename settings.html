@@ -63,15 +63,29 @@
                     <input type="checkbox" id="websearch_use_backticks" />
                     <span>Use `Backticks`</span>
                 </label>
+                <label class="checkbox_label" for="websearch_use_regex">
+                    <input type="checkbox" id="websearch_use_regex" />
+                    <span>Use Regex</span>
+                </label>
+                <div id="websearch_regex_block" class="flex flexFlowColumn">
+                    <label>Regex Rules</label>
+                    <div class="menu_button menu_button_icon" id="websearch_regex_add" title="Create a new regex rule">
+                        <i class="fa-solid fa-plus"></i>
+                        <span>Add Regex</span>
+                    </div>
+                    <div id="websearch_regex_list" class="wide100p flex-container flexFlowColumn"></div>
+                </div>
                 <label class="checkbox_label" for="websearch_use_trigger_phrases">
                     <input type="checkbox" id="websearch_use_trigger_phrases" />
                     <span>Use Trigger Phrases</span>
                 </label>
-                <label for="websearch_trigger_phrases">Trigger Phrases <small>(one per line)</small></label>
-                <small>If a message starts with a period, it will be ignored.</small>
-                <textarea id="websearch_trigger_phrases" class="text_pole textarea_compact" rows="4"></textarea>
-                <label for="websearch_max_words">Max Words <small>(per query)</small></label>
-                <input type="number" class="text_pole" id="websearch_max_words" value="" min="1" max="32" step="1">
+                <div id="websearch_trigger_phrases_block" class="flex-container flexFlowColumn">
+                    <label for="websearch_trigger_phrases">Trigger Phrases <small>(one per line)</small></label>
+                    <small>If a message starts with a period, it will be ignored.</small>
+                    <textarea id="websearch_trigger_phrases" class="text_pole textarea_compact" rows="4"></textarea>
+                    <label for="websearch_max_words">Max Words <small>(per query)</small></label>
+                    <input type="number" class="text_pole" id="websearch_max_words" value="" min="1" max="32" step="1">
+                </div>
                 <hr>
                 <h4>Page Scraping</h4>
                 <label class="checkbox_label" for="websearch_visit_enabled">

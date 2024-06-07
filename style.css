@@ -1,0 +1,33 @@
+@supports selector(:has(*)) {
+    .websearch_settings:not(:has(#websearch_use_trigger_phrases:checked)) #websearch_trigger_phrases_block,
+    .websearch_settings:not(:has(#websearch_use_regex:checked)) #websearch_regex_block {
+        display: none;
+    }
+}
+
+#websearch_regex_block,
+#websearch_trigger_phrases_block {
+    padding: 5px;
+    margin: 5px 0;
+}
+
+#websearch_regex_list:empty {
+    width: 100%;
+    height: 100%;
+}
+
+#websearch_regex_list:empty::before {
+    content: 'Nothing found.';
+    font-size: 0.95em;
+    font-weight: bolder;
+    width: 100%;
+    height: 100%;
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    opacity: 0.8;
+}
+
+#websearch_regex_add {
+    align-self: flex-end;
+}
