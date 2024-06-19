@@ -13,6 +13,7 @@ const WEBSEARCH_SOURCES = {
     SERPAPI: 'serpapi',
     EXTRAS: 'extras',
     PLUGIN: 'plugin',
+    SEARXNG: 'searxng',
 };
 
 const VISIT_TARGETS = {
@@ -86,7 +87,7 @@ const defaultSettings = {
     position: extension_prompt_types.IN_PROMPT,
     depth: 2,
     maxWords: 10,
-    budget: 1500,
+    budget: 2000,
     source: WEBSEARCH_SOURCES.SERPAPI,
     extras_engine: 'google',
     visit_enabled: false,
@@ -104,6 +105,7 @@ const defaultSettings = {
     use_trigger_phrases: true,
     use_regex: false,
     regex: [],
+    searxng_url: '',
 };
 
 function createRegexRule() {
@@ -152,6 +154,11 @@ async function isSearchAvailable() {
 
     if (extension_settings.websearch.source === WEBSEARCH_SOURCES.PLUGIN && !(await probeSeleniumSearchPlugin())) {
         console.debug('WebSearch: no websearch server plugin');
+        return false;
+    }
+
+    if (extension_settings.websearch.source === WEBSEARCH_SOURCES.SEARXNG && !extension_settings.websearch.searxng_url) {
+        console.debug('WebSearch: no SearXNG URL');
         return false;
     }
 
@@ -748,6 +755,39 @@ async function doSeleniumPluginQuery(query) {
     return { textBits, links };
 }
 
+async function doSearxngQuery(query) {
+    const result = await fetch('/api/search/searxng', {
+        method: 'POST',
+        headers: getRequestHeaders(),
+        body: JSON.stringify({ query, baseUrl: extension_settings.websearch.searxng_url }),
+    });
+
+    if (!result.ok) {
+        console.debug('WebSearch: search request failed', result.statusText);
+        return;
+    }
+
+    const data = await result.text();
+    const doc = new DOMParser().parseFromString(data, 'text/html');
+    const textBits = Array.from(doc.querySelectorAll('#urls p.content')).map(x => x.textContent.trim()).filter(x => x);
+    const links = Array.from(doc.querySelectorAll('#urls .url_wrapper')).map(x => x.getAttribute('href')).filter(x => x);
+
+    if (doc.querySelector('.infobox')) {
+        const infoboxText = doc.querySelector('.infobox p')?.textContent?.trim();
+        const infoboxLink = doc.querySelector('.infobox a')?.getAttribute('href');
+
+        if (infoboxText) {
+            textBits.unshift(infoboxText);
+        }
+
+        if (infoboxLink) {
+            links.unshift(infoboxLink);
+        }
+    }
+
+    return { textBits, links };
+}
+
 /**
  * Probes the Selenium search plugin to check if it's available.
  * @returns {Promise<boolean>} Whether the plugin is available
@@ -808,6 +848,8 @@ async function performSearchRequest(query, options = { useCache: true }) {
                     return await doExtrasApiQuery(query);
                 case WEBSEARCH_SOURCES.PLUGIN:
                     return await doSeleniumPluginQuery(query);
+                case WEBSEARCH_SOURCES.SEARXNG:
+                    return await doSearxngQuery(query);
                 default:
                     throw new Error(`Unrecognized search source: ${extension_settings.websearch.source}`);
             }
@@ -996,8 +1038,9 @@ jQuery(async () => {
     const html = renderExtensionTemplate('third-party/Extension-WebSearch', 'settings');
 
     function switchSourceSettings() {
-        $('#websearch_extras_settings').toggle(extension_settings.websearch.source === 'extras' || extension_settings.websearch.source === 'plugin');
-        $('#serpapi_settings').toggle(extension_settings.websearch.source === 'serpapi');
+        $('#websearch_extras_settings').toggle(extension_settings.websearch.source === WEBSEARCH_SOURCES.EXTRAS || extension_settings.websearch.source === WEBSEARCH_SOURCES.PLUGIN);
+        $('#serpapi_settings').toggle(extension_settings.websearch.source === WEBSEARCH_SOURCES.SERPAPI);
+        $('#websearch_searxng_settings').toggle(extension_settings.websearch.source === WEBSEARCH_SOURCES.SEARXNG);
     }
 
     $('#extensions_settings2').append(html);
@@ -1110,6 +1153,11 @@ jQuery(async () => {
     });
 
     $('#websearch_regex_add').on('click', createRegexRule);
+    $('#websearch_searxng_url').val(extension_settings.websearch.searxng_url);
+    $('#websearch_searxng_url').on('input', () => {
+        extension_settings.websearch.searxng_url = String($('#websearch_searxng_url').val());
+        saveSettingsDebounced();
+    });
 
     switchSourceSettings();
     await renderRegexRules();

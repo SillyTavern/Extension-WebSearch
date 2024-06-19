@@ -13,6 +13,7 @@
                 <h4>Source</h4>
                 <select id="websearch_source">
                     <option value="serpapi">SerpApi</option>
+                    <option value="searxng">SearXNG</option>
                     <option value="extras">Extras API</option>
                     <option value="plugin">Selenium Plugin</option>
                 </select>
@@ -26,6 +27,15 @@
                             <span>Click to set</span>
                         </div>
                     </div>
+                </div>
+                <div id="websearch_searxng_settings">
+                    <div>
+                        <strong>
+                            <a href="https://github.com/searxng/searxng">SearXNG <i class="fa-brands fa-github"></i></a>
+                        </strong>
+                    </div>
+                    <label for="websearch_searxng_url">Base URL</label>
+                    <input type="text" class="text_pole" id="websearch_searxng_url" value="">
                 </div>
                 <div id="websearch_extras_settings">
                     <label for="websearch_extras_engine">Engine</label>

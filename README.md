@@ -24,6 +24,12 @@ Requires SerpApi key and provides access to Google search.
 
 Get the key here: <https://serpapi.com/dashboard>
 
+### SearXNG
+
+Requires a SearXNG instance URL (either private or public). Uses HTML format for search results.
+
+Learn more: <https://docs.searxng.org/>
+
 ## How to use
 
 1. Make sure you use the latest version of SillyTavern (staging branch preferred).
@@ -98,3 +104,8 @@ Example: /websearch links=off snippets=on how to make a sandwich
 
 1. Google - answer box, knowledge graph, page snippets.
 2. DuckDuckGo - page snippets.
+
+#### SearXNG
+
+1. Infobox.
+2. Page snippets.
