@@ -1043,7 +1043,8 @@ jQuery(async () => {
         $('#websearch_searxng_settings').toggle(extension_settings.websearch.source === WEBSEARCH_SOURCES.SEARXNG);
     }
 
-    $('#extensions_settings2').append(html);
+    const getContainer = () => $(document.getElementById('websearch_container') ?? document.getElementById('extensions_settings2'));
+    getContainer().append(html);
     $('#websearch_source').val(extension_settings.websearch.source);
     $('#websearch_source').on('change', () => {
         extension_settings.websearch.source = String($('#websearch_source').find(':selected').val());
