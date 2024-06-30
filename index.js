@@ -1,8 +1,9 @@
-import { appendMediaToMessage, callPopup, extension_prompt_types, getRequestHeaders, saveSettingsDebounced, setExtensionPrompt, substituteParams } from '../../../../script.js';
+import { appendMediaToMessage, extension_prompt_types, getRequestHeaders, saveSettingsDebounced, setExtensionPrompt, substituteParams } from '../../../../script.js';
 import { appendFileContent, uploadFileAttachment } from '../../../chats.js';
 import { doExtrasFetch, extension_settings, getApiUrl, getContext, modules, renderExtensionTemplate } from '../../../extensions.js';
 import { registerDebugFunction } from '../../../power-user.js';
 import { SECRET_KEYS, secret_state, writeSecret } from '../../../secrets.js';
+import { POPUP_TYPE, callGenericPopup } from '../../../popup.js';
 import { registerSlashCommand } from '../../../slash-commands.js';
 import { extractTextFromHTML, isFalseBoolean, isTrueBoolean, onlyUnique, trimToEndSentence, trimToStartSentence, getStringHash, regexFromString } from '../../../utils.js';
 
@@ -944,7 +945,7 @@ class WebSearchScraper {
                 snippets = $(this).prop('checked');
             });
 
-            const confirm = await callPopup(template, 'confirm', '', { confirmText: 'Scrape', cancelText: 'Cancel' });
+            const confirm = await callGenericPopup(template, POPUP_TYPE.CONFIRM, '', { okButton: 'Scrape', cancelButton: 'Cancel' });
 
             if (!confirm) {
                 return;
@@ -1064,10 +1065,10 @@ jQuery(async () => {
     });
     $('#serpapi_key').toggleClass('success', !!secret_state[SECRET_KEYS.SERPAPI]);
     $('#serpapi_key').on('click', async () => {
-        const key = await callPopup('<h3>Add a SerpApi key</h3>', 'input', '', { rows: 2 });
+        const key = await callGenericPopup('<h3>Add a SerpApi key</h3>', POPUP_TYPE.INPUT, '', { rows: 2 });
 
         if (key) {
-            await writeSecret(SECRET_KEYS.SERPAPI, key.trim());
+            await writeSecret(SECRET_KEYS.SERPAPI, String(key).trim());
         }
 
         $('#serpapi_key').toggleClass('success', !!secret_state[SECRET_KEYS.SERPAPI]);
