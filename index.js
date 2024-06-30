@@ -1,11 +1,14 @@
-import { appendMediaToMessage, extension_prompt_types, getRequestHeaders, saveSettingsDebounced, setExtensionPrompt, substituteParams } from '../../../../script.js';
+import { appendMediaToMessage, extension_prompt_types, getRequestHeaders, saveSettingsDebounced, setExtensionPrompt, substituteParamsExtended } from '../../../../script.js';
 import { appendFileContent, uploadFileAttachment } from '../../../chats.js';
-import { doExtrasFetch, extension_settings, getApiUrl, getContext, modules, renderExtensionTemplate } from '../../../extensions.js';
+import { doExtrasFetch, extension_settings, getApiUrl, getContext, modules, renderExtensionTemplateAsync } from '../../../extensions.js';
 import { registerDebugFunction } from '../../../power-user.js';
 import { SECRET_KEYS, secret_state, writeSecret } from '../../../secrets.js';
 import { POPUP_TYPE, callGenericPopup } from '../../../popup.js';
-import { registerSlashCommand } from '../../../slash-commands.js';
 import { extractTextFromHTML, isFalseBoolean, isTrueBoolean, onlyUnique, trimToEndSentence, trimToStartSentence, getStringHash, regexFromString } from '../../../utils.js';
+import { SlashCommandParser } from '../../../slash-commands/SlashCommandParser.js';
+import { SlashCommand } from '../../../slash-commands/SlashCommand.js';
+import { ARGUMENT_TYPE, SlashCommandArgument, SlashCommandNamedArgument } from '../../../slash-commands/SlashCommandArgument.js';
+import { commonEnumProviders } from '../../../slash-commands/SlashCommandCommonEnumsProvider.js';
 
 const storage = new localforage.createInstance({ name: 'SillyTavern_WebSearch' });
 const extensionPromptMarker = '___WebSearch___';
@@ -20,7 +23,7 @@ const WEBSEARCH_SOURCES = {
 const VISIT_TARGETS = {
     MESSAGE: 0,
     DATA_BANK: 1,
-}
+};
 
 /**
  * @typedef {Object} RegexRule
@@ -109,6 +112,15 @@ const defaultSettings = {
     searxng_url: '',
 };
 
+/**
+ * Ensures that the provided string ends with a newline.
+ * @param {string} text String to ensure an ending newline
+ * @returns {string} String with an ending newline
+ */
+function ensureEndNewline(text) {
+    return text.endsWith('\n') ? text : text + '\n';
+}
+
 function createRegexRule() {
     const rule = { pattern: '', query: '' };
     extension_settings.websearch.regex.push(rule);
@@ -119,7 +131,7 @@ function createRegexRule() {
 async function renderRegexRules() {
     $('#websearch_regex_list').empty();
     for (const rule of extension_settings.websearch.regex) {
-        const template = $(await renderExtensionTemplate('third-party/Extension-WebSearch', 'regex'));
+        const template = $(await renderExtensionTemplateAsync('third-party/Extension-WebSearch', 'regex'));
         template.find('.websearch_regex_pattern').val(rule.pattern).on('input', function () {
             rule.pattern = String($(this).val());
             saveSettingsDebounced();
@@ -250,7 +262,7 @@ async function onWebSearchPrompt(chat) {
             template += '\n{{text}}';
         }
 
-        const extensionPrompt = substituteParams(template.replace(/{{text}}/i, text).replace(/{{query}}/i, searchQuery));
+        const extensionPrompt = substituteParamsExtended(template, { text: text, query: searchQuery });
         setExtensionPrompt(extensionPromptMarker, extensionPrompt, extension_settings.websearch.position, extension_settings.websearch.depth);
         console.log('WebSearch: prompt updated', extensionPrompt);
     } catch (error) {
@@ -308,7 +320,7 @@ function extractSearchQuery(message) {
 
             if (regex && regex.test(message)) {
                 const groups = message.match(regex);
-                const query = substituteParams(rule.query).replace(/\$(\d+)/g, (_, i) => groups[i] || '');
+                const query = substituteParamsExtended(rule.query).replace(/\$(\d+)/g, (_, i) => groups[i] || '');
                 console.debug('WebSearch: regex rule matched', rule.pattern, query);
                 return query;
             }
@@ -430,7 +442,7 @@ async function visitLinks(query, links) {
             const { link, text } = result.value;
 
             if (text) {
-                linkResult += substituteParams(extension_settings.websearch.visit_block_header.replace(/{{query}}/i, query).replace(/{{link}}/i, link).replace(/{{text}}/i, text));
+                linkResult += ensureEndNewline(substituteParamsExtended(extension_settings.websearch.visit_block_header, { query: query, text: text, link: link }));
             }
         }
     }
@@ -440,7 +452,7 @@ async function visitLinks(query, links) {
         return '';
     }
 
-    const fileHeader = substituteParams(extension_settings.websearch.visit_file_header.replace(/{{query}}/i, query));
+    const fileHeader = ensureEndNewline(substituteParamsExtended(extension_settings.websearch.visit_file_header, { query: query }));
     const fileText = fileHeader + linkResult;
     return fileText;
 }
@@ -570,7 +582,7 @@ async function uploadToDataBank(fileName, fileText) {
  */
 async function visitLink(link) {
     try {
-        const result = await fetch('/api/serpapi/visit', {
+        const result = await fetch('/api/search/visit', {
             method: 'POST',
             headers: getRequestHeaders(),
             body: JSON.stringify({ url: link }),
@@ -597,7 +609,7 @@ async function visitLink(link) {
  */
 async function doSerpApiQuery(query) {
     // Perform the search
-    const result = await fetch('/api/serpapi/search', {
+    const result = await fetch('/api/search/serpapi', {
         method: 'POST',
         headers: getRequestHeaders(),
         body: JSON.stringify({ query }),
@@ -927,7 +939,7 @@ class WebSearchScraper {
      */
     async scrape() {
         try {
-            const template = $(await renderExtensionTemplate('third-party/Extension-WebSearch', 'search-scrape', {}));
+            const template = $(await renderExtensionTemplateAsync('third-party/Extension-WebSearch', 'search-scrape', {}));
             let query = '';
             let maxResults = extension_settings.websearch.visit_count;
             let output = 'multiple';
@@ -992,14 +1004,11 @@ class WebSearchScraper {
 
                 for (const visitResult of visitResults) {
                     if (visitResult.text) {
-                        result += substituteParams(extension_settings.websearch.visit_block_header
-                            .replace(/{{query}}/i, query)
-                            .replace(/{{link}}/i, visitResult.link)
-                            .replace(/{{text}}/i, visitResult.text));
+                        result += ensureEndNewline(substituteParamsExtended(extension_settings.websearch.visit_block_header, { query: query, link: visitResult.link, text: visitResult.text }));
                     }
                 }
 
-                const fileHeader = substituteParams(extension_settings.websearch.visit_file_header.replace(/{{query}}/i, query));
+                const fileHeader = ensureEndNewline(substituteParamsExtended(extension_settings.websearch.visit_file_header, { query: query }));
                 const fileText = fileHeader + result;
                 const fileName = `websearch - ${query} - ${Date.now()}.txt`;
                 const file = new File([fileText], fileName, { type: 'text/plain' });
@@ -1036,7 +1045,7 @@ jQuery(async () => {
         }
     }
 
-    const html = renderExtensionTemplate('third-party/Extension-WebSearch', 'settings');
+    const html = await renderExtensionTemplateAsync('third-party/Extension-WebSearch', 'settings');
 
     function switchSourceSettings() {
         $('#websearch_extras_settings').toggle(extension_settings.websearch.source === WEBSEARCH_SOURCES.EXTRAS || extension_settings.websearch.source === WEBSEARCH_SOURCES.PLUGIN);
@@ -1186,31 +1195,65 @@ jQuery(async () => {
         }
     });
 
-    registerSlashCommand('websearch', async (args, query) => {
-        const includeSnippets = !isFalseBoolean(args.snippets);
-        const includeLinks = isTrueBoolean(args.links);
+    SlashCommandParser.addCommandObject(SlashCommand.fromProps({
+        name: 'websearch',
+        helpString: 'Performs a web search query. Use named arguments to specify what to return - page snippets, full parsed pages, or both.',
+        unnamedArgumentList: [
+            SlashCommandArgument.fromProps({
+                description: 'query',
+                typeList: [ARGUMENT_TYPE.STRING],
+                isRequired: true,
+                acceptsMultiple: false,
+            }),
+        ],
+        namedArgumentList: [
+            SlashCommandNamedArgument.fromProps({
+                name: 'snippets',
+                description: 'Include page snippets',
+                typeList: [ARGUMENT_TYPE.BOOLEAN],
+                isRequired: false,
+                acceptsMultiple: false,
+                defaultValue: String(true),
+                forceEnum: true,
+                enumProvider: commonEnumProviders.boolean('trueFalse'),
+            }),
+            SlashCommandNamedArgument.fromProps({
+                name: 'links',
+                description: 'Include full parsed pages',
+                typeList: [ARGUMENT_TYPE.BOOLEAN],
+                isRequired: false,
+                acceptsMultiple: false,
+                defaultValue: String(false),
+                forceEnum: true,
+                enumProvider: commonEnumProviders.boolean('trueFalse'),
+            }),
+        ],
+        callback: async (args, query) => {
+            const includeSnippets = !isFalseBoolean(String(args.snippets));
+            const includeLinks = isTrueBoolean(String(args.links));
 
-        if (!query) {
-            toastr.warning('No search query specified');
-            return '';
-        }
+            if (!query) {
+                toastr.warning('No search query specified');
+                return '';
+            }
 
-        if (!includeSnippets && !includeLinks) {
-            toastr.warning('No search result type specified');
-            return '';
-        }
+            if (!includeSnippets && !includeLinks) {
+                toastr.warning('No search result type specified');
+                return '';
+            }
 
-        const result = await performSearchRequest(query, { useCache: true });
+            const result = await performSearchRequest(String(query), { useCache: true });
 
-        let output = includeSnippets ? result.text : '';
+            let output = includeSnippets ? result.text : '';
 
-        if (includeLinks && Array.isArray(result.links) && result.links.length > 0) {
-            const visitResult = await visitLinks(query, result.links);
-            output += '\n' + visitResult;
-        }
+            if (includeLinks && Array.isArray(result.links) && result.links.length > 0) {
+                const visitResult = await visitLinks(String(query), result.links);
+                output += '\n' + visitResult;
+            }
 
-        return output;
-    }, [], '<span class="monospace">(links=on|off snippets=on|off [query])</span> – performs a web search query. Use named arguments to specify what to return - page snippets (default: on) or full parsed pages (default: off) or both.', true, true);
+            return output;
+        },
+    }));
 
     const context = getContext();
     if (typeof context.registerDataBankScraper === 'function') {
