@@ -3,7 +3,7 @@ import { appendFileContent, uploadFileAttachment } from '../../../chats.js';
 import { doExtrasFetch, extension_settings, getApiUrl, getContext, modules, renderExtensionTemplateAsync } from '../../../extensions.js';
 import { registerDebugFunction } from '../../../power-user.js';
 import { SECRET_KEYS, secret_state, writeSecret } from '../../../secrets.js';
-import { POPUP_TYPE, callGenericPopup } from '../../../popup.js';
+import { POPUP_RESULT, POPUP_TYPE, callGenericPopup } from '../../../popup.js';
 import { extractTextFromHTML, isFalseBoolean, isTrueBoolean, onlyUnique, trimToEndSentence, trimToStartSentence, getStringHash, regexFromString } from '../../../utils.js';
 import { SlashCommandParser } from '../../../slash-commands/SlashCommandParser.js';
 import { SlashCommand } from '../../../slash-commands/SlashCommand.js';
@@ -1074,10 +1074,23 @@ jQuery(async () => {
     });
     $('#serpapi_key').toggleClass('success', !!secret_state[SECRET_KEYS.SERPAPI]);
     $('#serpapi_key').on('click', async () => {
-        const key = await callGenericPopup('<h3>Add a SerpApi key</h3>', POPUP_TYPE.INPUT, '', { rows: 2 });
+        const key = await callGenericPopup('Add a SerpApi key', POPUP_TYPE.INPUT, '', {
+            rows: 2,
+            customButtons: [{
+                text: 'Remove Key',
+                appendAtEnd: true,
+                result: POPUP_RESULT.NEGATIVE,
+                action: async () => {
+                    await writeSecret(SECRET_KEYS.SERPAPI, '');
+                    $('#serpapi_key').toggleClass('success', !!secret_state[SECRET_KEYS.SERPAPI]);
+                    toastr.success('API Key removed');
+                },
+            }],
+        });
 
         if (key) {
             await writeSecret(SECRET_KEYS.SERPAPI, String(key).trim());
+            toastr.success('API Key saved');
         }
 
         $('#serpapi_key').toggleClass('success', !!secret_state[SECRET_KEYS.SERPAPI]);
