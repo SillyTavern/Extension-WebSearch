@@ -108,6 +108,7 @@ const defaultSettings = {
     use_backticks: true,
     use_trigger_phrases: true,
     use_regex: false,
+    use_function_tool: false,
     regex: [],
     searxng_url: '',
 };
@@ -178,7 +179,26 @@ async function isSearchAvailable() {
     return true;
 }
 
+/**
+ * Determines whether the function tool can be used.
+ * @returns {boolean} Whether the function tool can be used
+ */
+function canUseFunctionTool() {
+    const { isToolCallingSupported } = SillyTavern.getContext();
+    if (typeof isToolCallingSupported !== 'function') {
+        console.debug('WebSearch: tool calling is not supported');
+        return false;
+    }
+
+    return isToolCallingSupported();
+}
+
 async function onWebSearchPrompt(chat) {
+    if (extension_settings.websearch.use_function_tool && canUseFunctionTool()) {
+        console.debug('WebSearch: using the function tool');
+        return;
+    }
+
     if (!extension_settings.websearch.enabled) {
         console.debug('WebSearch: extension is disabled');
         return;
@@ -1034,6 +1054,54 @@ class WebSearchScraper {
     }
 }
 
+function registerFunctionTools() {
+    try {
+        const { registerFunctionTool, unregisterFunctionTool } = SillyTavern.getContext();
+
+        if (!registerFunctionTool || !unregisterFunctionTool) {
+            console.log('WebSearch: Function tools are not supported');
+            return;
+        }
+
+        if (!extension_settings.websearch.use_function_tool) {
+            unregisterFunctionTool('WebSearch');
+            return;
+        }
+
+        const webSearchSchema = Object.freeze({
+            $schema: 'http://json-schema.org/draft-04/schema#',
+            type: 'object',
+            properties: {
+                query: {
+                    type: 'string',
+                    description: 'Web Query used in search engine.',
+                },
+            },
+            required: [
+                'query',
+            ],
+        });
+
+        registerFunctionTool({
+            name: 'WebSearch',
+            displayName: 'Web Search',
+            description: 'Search the web and get the content of the relevant pages. Search for unknown knowledge, public personalities, up-to-date information, weather, news, etc.',
+            parameters: webSearchSchema,
+            formatMessage: (args) => args?.query ? `Searching the web for: ${args?.query}` : '',
+            action: async (args) => {
+                if (!args) throw new Error('No arguments provided');
+                if (!args.query) throw new Error('No query provided');
+                if (!(await isSearchAvailable())) throw new Error('Search is not available');
+                const search = await performSearchRequest(args.query, { useCache: true });
+                const result = await Promise.allSettled(search.links.map(visitLink));
+                return result.filter(x => x.status === 'fulfilled').map(x => x.value);
+            },
+        });
+    } catch (error) {
+        console.error('WebSearch: Function tools failed to register:', error);
+    }
+}
+
 jQuery(async () => {
     if (!extension_settings.websearch) {
         extension_settings.websearch = structuredClone(defaultSettings);
@@ -1183,7 +1251,15 @@ jQuery(async () => {
         saveSettingsDebounced();
     });
 
+    $('#websearch_use_function_tool').prop('checked', extension_settings.websearch.use_function_tool);
+    $('#websearch_use_function_tool').on('change', () => {
+        extension_settings.websearch.use_function_tool = !!$('#websearch_use_function_tool').prop('checked');
+        registerFunctionTools();
+        saveSettingsDebounced();
+    });
+
     switchSourceSettings();
+    registerFunctionTools();
     await renderRegexRules();
 
     registerDebugFunction('clearWebSearchCache', 'Clear the WebSearch cache', 'Removes all search results stored in the local cache.', async () => {
