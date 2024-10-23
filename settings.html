@@ -14,13 +14,14 @@
                 <select id="websearch_source">
                     <option value="serpapi">SerpApi</option>
                     <option value="searxng">SearXNG</option>
+                    <option value="tavily">Tavily</option>
                     <option value="extras">Extras API</option>
                     <option value="plugin">Selenium Plugin</option>
                 </select>
                 <div id="serpapi_settings">
                     <div class="flex-container alignItemsBaseline">
                         <h4 for="serpapi_key" class="flex1 margin0">
-                            <a href="https://serpapi.com/" target="_blank">SerpApi Key</a>
+                            <a href="https://serpapi.com/" target="_blank" rel="noopener noreferrer">SerpApi Key</a>
                         </h4>
                         <div id="serpapi_key" class="menu_button menu_button_icon">
                             <i class="fa-solid fa-key"></i>
@@ -31,7 +32,9 @@
                 <div id="websearch_searxng_settings">
                     <div>
                         <strong>
-                            <a href="https://github.com/searxng/searxng">SearXNG <i class="fa-brands fa-github"></i></a>
+                            <a href="https://github.com/searxng/searxng" target="_blank" rel="noopener noreferrer">
+                                SearXNG <i class="fa-brands fa-github"></i>
+                            </a>
                         </strong>
                     </div>
                     <label for="websearch_searxng_url">Base URL</label>
@@ -43,6 +46,17 @@
                         <option value="google">Google</option>
                         <option value="duckduckgo">DuckDuckGo</option>
                     </select>
+                </div>
+                <div id="websearch_tavily_settings">
+                    <div class="flex-container alignItemsBaseline">
+                        <h4 for="tavily_key" class="flex1 margin0">
+                            <a href="https://app.tavily.com/" target="_blank" rel="noopener noreferrer">Tavily AI Key</a>
+                        </h4>
+                        <div id="tavily_key" class="menu_button menu_button_icon">
+                            <i class="fa-solid fa-key"></i>
+                            <span>Click to set</span>
+                        </div>
+                    </div>
                 </div>
                 <label for="websearch_cache_lifetime">Cache Lifetime <small>(seconds)</small></label>
                 <input type="number" class="text_pole" id="websearch_cache_lifetime" value="">

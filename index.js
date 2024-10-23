@@ -18,6 +18,7 @@ const WEBSEARCH_SOURCES = {
     EXTRAS: 'extras',
     PLUGIN: 'plugin',
     SEARXNG: 'searxng',
+    TAVILY: 'tavily',
 };
 
 const VISIT_TARGETS = {
@@ -173,6 +174,11 @@ async function isSearchAvailable() {
 
     if (extension_settings.websearch.source === WEBSEARCH_SOURCES.SEARXNG && !extension_settings.websearch.searxng_url) {
         console.debug('WebSearch: no SearXNG URL');
+        return false;
+    }
+
+    if (extension_settings.websearch.source === WEBSEARCH_SOURCES.TAVILY && !secret_state[SECRET_KEYS.TAVILY]) {
+        console.debug('WebSearch: no Tavily key found');
         return false;
     }
 
@@ -788,6 +794,41 @@ async function doSeleniumPluginQuery(query) {
     return { textBits, links };
 }
 
+/**
+ * Performs a search query via Tavily.
+ * @param {string} query Search query
+ * @returns {Promise<{textBits: string[], links: string[]}>} Lines of search results.
+ */
+async function doTavilyQuery(query) {
+    const result = await fetch('/api/search/tavily', {
+        method: 'POST',
+        headers: getRequestHeaders(),
+        body: JSON.stringify({ query }),
+    });
+
+    if (!result.ok) {
+        console.debug('WebSearch: search request failed', result.statusText);
+        return;
+    }
+
+    const textBits = [];
+    const links = [];
+    const data = await result.json();
+
+    if (data.answer) {
+        textBits.push(data.answer);
+    }
+
+    if (Array.isArray(data.results)) {
+        data.results.forEach(x => {
+            textBits.push(`${x.title}\n${x.content}`);
+            links.push(x.url);
+        });
+    }
+
+    return { textBits, links };
+}
+
 async function doSearxngQuery(query) {
     const result = await fetch('/api/search/searxng', {
         method: 'POST',
@@ -883,6 +924,8 @@ async function performSearchRequest(query, options = { useCache: true }) {
                     return await doSeleniumPluginQuery(query);
                 case WEBSEARCH_SOURCES.SEARXNG:
                     return await doSearxngQuery(query);
+                case WEBSEARCH_SOURCES.TAVILY:
+                    return await doTavilyQuery(query);
                 default:
                     throw new Error(`Unrecognized search source: ${extension_settings.websearch.source}`);
             }
@@ -1082,6 +1125,23 @@ function registerFunctionTools() {
             ],
         });
 
+        const visitLinksSchema = Object.freeze({
+            $schema: 'http://json-schema.org/draft-04/schema#',
+            type: 'object',
+            properties: {
+                links: {
+                    type: 'array',
+                    items: {
+                        type: 'string',
+                    },
+                    description: 'Web links to visit.',
+                },
+            },
+            required: [
+                'links',
+            ],
+        });
+
         registerFunctionTool({
             name: 'WebSearch',
             displayName: 'Web Search',
@@ -1093,8 +1153,35 @@ function registerFunctionTools() {
                 if (!args.query) throw new Error('No query provided');
                 if (!(await isSearchAvailable())) throw new Error('Search is not available');
                 const search = await performSearchRequest(args.query, { useCache: true });
-                const result = await Promise.allSettled(search.links.map(visitLink));
-                return result.filter(x => x.status === 'fulfilled').map(x => x.value);
+                return search;
+            },
+        });
+
+        registerFunctionTool({
+            name: 'VisitLinks',
+            displayName: 'Visit Links',
+            description: 'Visit the web links and get the content of the relevant pages.',
+            parameters: visitLinksSchema,
+            formatMessage: (args) => args?.links ? `Visiting the web links` : '',
+            action: async (args) => {
+                if (!args) throw new Error('No arguments provided');
+                if (!args.links) throw new Error('No links provided');
+                if (!(await isSearchAvailable())) throw new Error('Search is not available');
+                const visitResults = [];
+
+                for (const link of args.links) {
+                    if (!isAllowedUrl(link)) {
+                        continue;
+                    }
+
+                    const visitResult = await visitLink(link);
+
+                    if (visitResult) {
+                        visitResults.push(visitResult);
+                    }
+                }
+
+                return visitResults;
             },
         });
     } catch (error) {
@@ -1119,6 +1206,7 @@ jQuery(async () => {
         $('#websearch_extras_settings').toggle(extension_settings.websearch.source === WEBSEARCH_SOURCES.EXTRAS || extension_settings.websearch.source === WEBSEARCH_SOURCES.PLUGIN);
         $('#serpapi_settings').toggle(extension_settings.websearch.source === WEBSEARCH_SOURCES.SERPAPI);
         $('#websearch_searxng_settings').toggle(extension_settings.websearch.source === WEBSEARCH_SOURCES.SEARXNG);
+        $('#websearch_tavily_settings').toggle(extension_settings.websearch.source === WEBSEARCH_SOURCES.TAVILY);
     }
 
     const getContainer = () => $(document.getElementById('websearch_container') ?? document.getElementById('extensions_settings2'));
@@ -1162,6 +1250,29 @@ jQuery(async () => {
         }
 
         $('#serpapi_key').toggleClass('success', !!secret_state[SECRET_KEYS.SERPAPI]);
+    });
+    $('#tavily_key').toggleClass('success', !!secret_state[SECRET_KEYS.TAVILY]);
+    $('#tavily_key').on('click', async () => {
+        const key = await callGenericPopup('Add a Tavily key', POPUP_TYPE.INPUT, '', {
+            rows: 2,
+            customButtons: [{
+                text: 'Remove Key',
+                appendAtEnd: true,
+                result: POPUP_RESULT.NEGATIVE,
+                action: async () => {
+                    await writeSecret(SECRET_KEYS.TAVILY, '');
+                    $('#tavily_key').toggleClass('success', !!secret_state[SECRET_KEYS.TAVILY]);
+                    toastr.success('API Key removed');
+                },
+            }],
+        });
+
+        if (key) {
+            await writeSecret(SECRET_KEYS.TAVILY, String(key).trim());
+            toastr.success('API Key saved');
+        }
+
+        $('#tavily_key').toggleClass('success', !!secret_state[SECRET_KEYS.TAVILY]);
     });
     $('#websearch_budget').val(extension_settings.websearch.budget);
     $('#websearch_budget').on('input', () => {
