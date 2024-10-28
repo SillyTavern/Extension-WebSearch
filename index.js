@@ -844,7 +844,7 @@ async function doSearxngQuery(query) {
     const data = await result.text();
     const doc = new DOMParser().parseFromString(data, 'text/html');
     const textBits = Array.from(doc.querySelectorAll('#urls p.content')).map(x => x.textContent.trim()).filter(x => x);
-    const links = Array.from(doc.querySelectorAll('#urls .url_wrapper')).map(x => x.getAttribute('href')).filter(x => x);
+    const links = Array.from(doc.querySelectorAll('#urls .url_header, #urls .url_wrapper')).map(x => x.getAttribute('href')).filter(x => x);
 
     if (doc.querySelector('.infobox')) {
         const infoboxText = doc.querySelector('.infobox p')?.textContent?.trim();
