@@ -112,6 +112,7 @@ const defaultSettings = {
     use_function_tool: false,
     regex: [],
     searxng_url: '',
+    searxng_preferences: '',
 };
 
 /**
@@ -833,7 +834,7 @@ async function doSearxngQuery(query) {
     const result = await fetch('/api/search/searxng', {
         method: 'POST',
         headers: getRequestHeaders(),
-        body: JSON.stringify({ query, baseUrl: extension_settings.websearch.searxng_url }),
+        body: JSON.stringify({ query, baseUrl: extension_settings.websearch.searxng_url, preferences: extension_settings.websearch.searxng_preferences }),
     });
 
     if (!result.ok) {
@@ -1359,6 +1360,12 @@ jQuery(async () => {
     $('#websearch_searxng_url').val(extension_settings.websearch.searxng_url);
     $('#websearch_searxng_url').on('input', () => {
         extension_settings.websearch.searxng_url = String($('#websearch_searxng_url').val());
+        saveSettingsDebounced();
+    });
+
+    $('#websearch_searxng_preferences').val(extension_settings.websearch.searxng_preferences);
+    $('#websearch_searxng_preferences').on('input', () => {
+        extension_settings.websearch.searxng_preferences = String($('#websearch_searxng_preferences').val());
         saveSettingsDebounced();
     });
 
