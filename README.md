@@ -64,8 +64,8 @@ Get the key here: <https://app.tavily.com/>
 1. Use Function Tool - uses [function calling](https://docs.sillytavern.app/for-contributors/function-calling/) to activate search or scrape web pages. Must use a supported Chat Completion API and be enabled in the AI Response settings. **Disables all other activation methods when engaged.**
 2. Use Backticks - enables search activation using words encased in single backticks.
 3. Use Trigger Phrases - enables search activation using trigger phrases.
-4. Regular expressions - provide a JS-flavored regex to match the user message. If the regex matches, the search with a given query will be triggered. Search query supports `{{macros}}` and $1-syntax to reference the matched group. Example: `/what is happening in (.*)/i` regex for search query `news in $1` will match a message containing `what is happening in New York` and trigger the search with the query `news in New York`.
-5. Trigger Phrases - add phrases that will trigger the search, one by one. It can be anywhere in the message, and the query starts from the trigger word and spans to "Max Words" total. To exclude a specific message from processing, it must start with a period, e.g. `.What do you think?`. Priority of triggers: first by order in the textbox, then the first one in the user message.
+4. Regular expressions - provide a JS-flavored regex to match the user message. If the regex matches, the search with a given query will be triggered. Search query supports `{{macros}}` and `$1`-syntax to reference the matched group. Example: `/what is happening in (.*)/i` regex for search query `news in $1` will match a message containing `what is happening in New York` and trigger the search with the query `news in New York`.
+5. Trigger Phrases - add phrases that will trigger the search, one by one. It can be anywhere in the message, and the query starts from the trigger word and spans to "Max Words" total. To exclude a specific message from processing, it must start with a period, e.g., `.What do you think?`. Priority of triggers: first by order in the textbox, then the first one in the user message.
 6. Max Words - how many words are included in the search query (including the trigger phrase). Google has a limit of about 32 words per prompt. Default = 10 words.
 
 ### Page Scraping
@@ -75,7 +75,16 @@ Get the key here: <https://app.tavily.com/>
 3. Visit Domain Blacklist - site domains to be excluded from visiting. One per line.
 4. File Header - file header template, inserted at the start of the text file, has an additional `{{query}}` macro.
 5. Block Header - link block template, inserted with the parsed content of every link. Use `{{link}}` macro for page URL and `{{text}}` for page content.
-6. Save Target - where to save the results of scraping. Possible options: trigger message attachments, or chat attachments of Data Bank (only on release >=1.12.0).
+6. Save Target - where to save the results of scraping. Possible options: trigger message attachments or Data Bank (only on release >=1.12.0).
+
+### URL Scraping
+
+1. **Enable URL Scraping** - Toggles the URL Scraping feature on and off.
+2. **Max Scrapes Per Message** - Sets the maximum number of URLs to scrape per user message to prevent excessive requests.
+3. **HTML Tags to Extract (comma-separated)** - Specifies which HTML tags to extract text from. By default, it extracts from `<p>`, `<h1>`, `<h2>`, `<h3>`, and `<li>` tags.
+4. **Attach Scraped Content As**:
+    - **Inline Text**: Inserts the scraped content directly into the chat.
+    - **File Attachment**: Attaches the scraped content as a `.txt` file.
 
 ## More info
 
@@ -96,28 +105,3 @@ This extension also provides a `/websearch` slash command to use in STscript. Mo
 /websearch (links=on|off snippets=on|off [query]) – performs a web search query. Use named arguments to specify what to return - page snippets (default: on) or full parsed pages (default: off) or both.
 
 Example: /websearch links=off snippets=on how to make a sandwich
-```
-
-### What can be included in the search result?
-
-#### SerpApi
-
-1. Answer box. Direct answer to the question.
-2. Knowledge graph. Encyclopedic knowledge about the topic.
-3. Page snippets (max 10). Relevant extracts from the web pages.
-4. Relevant questions (max 10). Questions and answers to similar topics.
-
-#### Selenium Plugin and Extras API
-
-1. Google - answer box, knowledge graph, page snippets.
-2. DuckDuckGo - page snippets.
-
-#### SearXNG
-
-1. Infobox.
-2. Page snippets.
-
-#### Tavily AI
-
-1. Answer.
-2. Page contents.

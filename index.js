@@ -113,6 +113,13 @@ const defaultSettings = {
     regex: [],
     searxng_url: '',
     searxng_preferences: '',
+    // New URL Scraping Settings
+    urlScraping: {
+        enabled: false, // Toggle URL scraping
+        maxScrapesPerMessage: 3, // Maximum number of URLs to scrape per message
+        extractTags: ['p', 'h1', 'h2', 'h3', 'li'], // HTML tags to extract text from
+        attachScrapedContentAs: 'inline', // Options: 'inline' or 'file'
+    },
 };
 
 /**
@@ -399,7 +406,7 @@ function processInputText(text) {
     // Convert to lowercase
     text = text.toLowerCase();
     // Remove punctuation
-    text = text.replace(/[\\.,@#!?$%&;:{}=_~[\]]/g, '');
+    text = text.replace(/[\\.,@#!?$%&;:{}=_~[$$]/g, '');
     // Remove double quotes (including region-specific ones)
     text = text.replace(/["“”]/g, '');
     // Remove carriage returns
@@ -1109,6 +1116,7 @@ function registerFunctionTools() {
 
         if (!extension_settings.websearch.use_function_tool) {
             unregisterFunctionTool('WebSearch');
+            unregisterFunctionTool('VisitLinks');
             return;
         }
 
@@ -1340,19 +1348,30 @@ jQuery(async () => {
         extension_settings.websearch.visit_block_header = String($('#websearch_block_header').val());
         saveSettingsDebounced();
     });
-    $('#websearch_use_backticks').prop('checked', extension_settings.websearch.use_backticks);
-    $('#websearch_use_backticks').on('change', () => {
-        extension_settings.websearch.use_backticks = !!$('#websearch_use_backticks').prop('checked');
+
+    // Initialize URL Scraping Settings
+    $('#websearch_url_scraping_enabled').prop('checked', extension_settings.websearch.urlScraping.enabled);
+    $('#websearch_url_scraping_enabled').on('change', () => {
+        extension_settings.websearch.urlScraping.enabled = !!$('#websearch_url_scraping_enabled').prop('checked');
         saveSettingsDebounced();
     });
-    $('#websearch_use_trigger_phrases').prop('checked', extension_settings.websearch.use_trigger_phrases);
-    $('#websearch_use_trigger_phrases').on('change', () => {
-        extension_settings.websearch.use_trigger_phrases = !!$('#websearch_use_trigger_phrases').prop('checked');
+
+    $('#websearch_max_scrapes').val(extension_settings.websearch.urlScraping.maxScrapesPerMessage);
+    $('#websearch_max_scrapes').on('input', () => {
+        extension_settings.websearch.urlScraping.maxScrapesPerMessage = Number($('#websearch_max_scrapes').val());
         saveSettingsDebounced();
     });
-    $('#websearch_use_regex').prop('checked', extension_settings.websearch.use_regex);
-    $('#websearch_use_regex').on('change', () => {
-        extension_settings.websearch.use_regex = !!$('#websearch_use_regex').prop('checked');
+
+    $('#websearch_extract_tags').val(extension_settings.websearch.urlScraping.extractTags.join(','));
+    $('#websearch_extract_tags').on('input', () => {
+        const tags = String($('#websearch_extract_tags').val()).split(',').map(tag => tag.trim()).filter(tag => tag);
+        extension_settings.websearch.urlScraping.extractTags = tags;
+        saveSettingsDebounced();
+    });
+
+    $('input[name="websearch_attach_option"][value="' + extension_settings.websearch.urlScraping.attachScrapedContentAs + '"]').prop('checked', true);
+    $('input[name="websearch_attach_option"]').on('change', () => {
+        extension_settings.websearch.urlScraping.attachScrapedContentAs = String($('input[name="websearch_attach_option"]:checked').val());
         saveSettingsDebounced();
     });
 
@@ -1466,4 +1485,175 @@ jQuery(async () => {
     if (typeof context.registerDataBankScraper === 'function') {
         context.registerDataBankScraper(new WebSearchScraper());
     }
+
+    // Register URL Scraping Interceptor
+    window['URL_Scrape_Intercept'] = onURLScrapeIntercept;
+
+    // Assuming multiple interceptors are supported
+    window['WebSearch_Intercept'] = onWebSearchPrompt;
 });
+
+/**
+ * Intercepts messages to detect URLs and scrape content.
+ * @param {Array} chat Chat history
+ */
+async function onURLScrapeIntercept(chat) {
+    if (!extension_settings.websearch.urlScraping.enabled) {
+        return;
+    }
+
+    if (!chat || !Array.isArray(chat) || chat.length === 0) {
+        return;
+    }
+
+    const startTime = Date.now();
+
+    try {
+        // Find the latest user message
+        let userMessage = null;
+
+        for (let message of chat.slice().reverse()) {
+            if (message.is_system) continue;
+            if (message.mes && message.is_user) {
+                userMessage = message.mes;
+                break;
+            }
+        }
+
+        if (!userMessage) {
+            return;
+        }
+
+        const urls = userMessage.match(/https?:\/\/[^\s]+/g); // Simple regex to detect URLs
+        if (!urls || urls.length === 0) {
+            return;
+        }
+
+        const uniqueUrls = [...new Set(urls)].slice(0, extension_settings.websearch.urlScraping.maxScrapesPerMessage);
+
+        const scrapedContents = [];
+
+        for (const url of uniqueUrls) {
+            if (!isAllowedUrl(url)) {
+                console.debug('URL Scraping: URL is blacklisted or invalid', url);
+                continue;
+            }
+
+            const scrapedText = await scrapeWebPage(url);
+
+            if (scrapedText) {
+                scrapedContents.push({ url, text: scrapedText });
+            }
+        }
+
+        if (scrapedContents.length === 0) {
+            return;
+        }
+
+        // Integrate scraped content based on user settings
+        if (extension_settings.websearch.urlScraping.attachScrapedContentAs === 'inline') {
+            // Prepare inline insertion
+            let inlineText = '---\n**Scraped Content:**\n';
+            scrapedContents.forEach(item => {
+                inlineText += `**URL:** ${item.url}\n`;
+                inlineText += `${item.text}\n\n`;
+            });
+            inlineText += '---';
+
+            setExtensionPrompt('___WebSearch_URL_Scraping___', inlineText, extension_settings.websearch.position, extension_settings.websearch.depth);
+            console.log('URL Scraping: Inline content inserted');
+        } else if (extension_settings.websearch.urlScraping.attachScrapedContentAs === 'file') {
+            // Prepare file attachment
+            let fileContent = '';
+            scrapedContents.forEach(item => {
+                fileContent += `URL: ${item.url}\n`;
+                fileContent += `${item.text}\n\n`;
+            });
+
+            const fileName = `scraped_content_${Date.now()}.txt`;
+            const base64Data = window.btoa(unescape(encodeURIComponent(fileContent)));
+            const uniqueFileName = `${Date.now()}_${getStringHash(fileName)}.txt`;
+
+            const fileUrl = await uploadFileAttachment(uniqueFileName, base64Data);
+
+            if (fileUrl) {
+                const context = getContext();
+                const messageId = Number(message.index);
+                const message = context.chat[messageId];
+
+                if (message) {
+                    message.extra = Object.assign((message.extra || {}), { file: {
+                        url: fileUrl,
+                        size: fileContent.length,
+                        name: fileName,
+                    }});
+                    const messageElement = $(`.mes[mesid="${messageId}"]`);
+
+                    if (messageElement.length > 0) {
+                        appendMediaToMessage(message, messageElement);
+                        console.log('URL Scraping: File attachment added');
+                    }
+                }
+            }
+        }
+    } catch (error) {
+        console.error('URL Scraping: Error during scraping', error);
+    } finally {
+        console.log('URL Scraping: Finished in', Date.now() - startTime, 'ms');
+    }
+}
+
+/**
+ * Scrapes the content of a web page from a given URL.
+ * @param {string} url URL of the web page to scrape
+ * @returns {Promise<string>} Extracted text content
+ */
+async function scrapeWebPage(url) {
+    try {
+        const response = await fetch('/api/search/visit', {
+            method: 'POST',
+            headers: getRequestHeaders(),
+            body: JSON.stringify({ url }),
+        });
+
+        if (!response.ok) {
+            console.debug(`URL Scraping: Failed to fetch ${url} - Status ${response.status}`);
+            return '';
+        }
+
+        const data = await response.blob();
+        const extractedText = await extractTextFromHTML(data, extension_settings.websearch.urlScraping.extractTags);
+        console.debug('URL Scraping: Extracted text from', url);
+        return extractedText;
+    } catch (error) {
+        console.error('URL Scraping: Error fetching URL', url, error);
+        return '';
+    }
+}
+
+/**
+ * Extracts text content from HTML based on specified tags.
+ * @param {Blob} htmlBlob HTML content as a Blob
+ * @param {string[]} tags Array of HTML tags to extract text from
+ * @returns {Promise<string>} Extracted text
+ */
+async function extractTextFromHTML(htmlBlob, tags = ['p']) {
+    try {
+        const htmlText = await htmlBlob.text();
+        const parser = new DOMParser();
+        const doc = parser.parseFromString(htmlText, 'text/html');
+        let extractedText = '';
+
+        tags.forEach(tag => {
+            const elements = doc.querySelectorAll(tag);
+            elements.forEach(el => {
+                extractedText += el.textContent.trim() + '\n';
+            });
+        });
+
+        return extractedText.trim();
+    } catch (error) {
+        console.error('extractTextFromHTML: Failed to extract text', error);
+        return '';
+    }
+}

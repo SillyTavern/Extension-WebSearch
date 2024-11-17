@@ -6,6 +6,8 @@
         </div>
         <div class="inline-drawer-content">
             <div class="flex-container flexFlowColumn">
+                <!-- Existing Web Search Settings -->
+
                 <label class="checkbox_label" for="websearch_enabled">
                     <input type="checkbox" id="websearch_enabled" />
                     <span>Enabled</span>
@@ -83,6 +85,7 @@
                         <input type="radio" name="websearch_position" value="1" />
                         In-chat @ Depth <input id="websearch_depth" class="text_pole widthUnset" type="number" min="0" max="999" />
                     </label>
+                </div>
                 <hr>
                 <h4>Search Activation</h4>
                 <label class="checkbox_label" for="websearch_use_function_tool">
@@ -138,11 +141,32 @@
                 <label for="websearch_visit_blacklist">Visit Domain Blacklist <small>(one per line)</small></label>
                 <textarea id="websearch_visit_blacklist" class="text_pole textarea_compact" rows="4"></textarea>
                 <label for="websearch_file_header">File Header</label>
-                <textarea id="websearch_file_header" class="text_pole textarea_compact autoSetHeight" rows="2" placeholder="Use &lcub;&lcub;query&rcub;&rcub; macro."></textarea>
+                <textarea id="websearch_file_header" class="text_pole textarea_compact autoSetHeight" rows="2" placeholder="Use {{query}} macro."></textarea>
                 <label for="websearch_block_header">Block Header</label>
-                <textarea id="websearch_block_header" class="text_pole textarea_compact autoSetHeight" rows="2" placeholder="Use &lcub;&lcub;link&rcub;&rcub; and &lcub;&lcub;text&rcub;&rcub; macros."></textarea>
-                </div>
+                <textarea id="websearch_block_header" class="text_pole textarea_compact autoSetHeight" rows="2" placeholder="Use {{link}} and {{text}} macros."></textarea>
+
+                <!-- New URL Scraping Settings -->
+                <hr>
+                <h4>URL Scraping</h4>
+                <label class="checkbox_label" for="websearch_url_scraping_enabled">
+                    <input type="checkbox" id="websearch_url_scraping_enabled" />
+                    <span>Enable URL Scraping</span>
+                </label>
+                <label for="websearch_max_scrapes">Max Scrapes Per Message</label>
+                <input type="number" class="text_pole" id="websearch_max_scrapes" value="3" min="1" max="10" />
+                <label for="websearch_extract_tags">HTML Tags to Extract (comma-separated)</label>
+                <input type="text" class="text_pole" id="websearch_extract_tags" value="p,h1,h2,h3,li" />
+                <label>
+                    <span>Attach Scraped Content As:</span>
+                    <label class="radio_label">
+                        <input type="radio" name="websearch_attach_option" value="inline" checked />
+                        <span>Inline Text</span>
+                    </label>
+                    <label class="radio_label">
+                        <input type="radio" name="websearch_attach_option" value="file" />
+                        <span>File Attachment</span>
+                    </label>
+                </label>
             </div>
         </div>
     </div>
-</div>
