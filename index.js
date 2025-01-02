@@ -200,7 +200,12 @@ function canUseFunctionTool() {
     return isToolCallingSupported();
 }
 
-async function onWebSearchPrompt(chat) {
+async function onWebSearchPrompt(chat, _maxContext, _abort, type) {
+    if (type === 'quiet') {
+        console.debug('WebSearch: quiet prompt, ignoring');
+        return;
+    }
+
     if (extension_settings.websearch.use_function_tool && canUseFunctionTool()) {
         console.debug('WebSearch: using the function tool');
         return;
