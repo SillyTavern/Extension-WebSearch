@@ -36,6 +36,12 @@ Requires an API key.
 
 Get the key here: <https://app.tavily.com/>
 
+### KoboldCpp
+
+KoboldCpp URL must be provided in Text Completion API settings. KoboldCpp version must be >= 1.81.1 and WebSearch module must be enabled on startup: enable Network => Enable WebSearch in the GUI launcher or add `--websearch` to the command line.
+
+See: <https://github.com/LostRuins/koboldcpp/releases/tag/v1.81.1>
+
 ## How to use
 
 1. Make sure you use the latest version of SillyTavern (staging branch preferred).
@@ -121,3 +127,8 @@ Example: /websearch links=off snippets=on how to make a sandwich
 
 1. Answer.
 2. Page contents.
+
+#### KoboldCpp
+
+1. Page titles.
+2. Page snippets.
