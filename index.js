@@ -9,8 +9,10 @@ import { SlashCommandParser } from '../../../slash-commands/SlashCommandParser.j
 import { SlashCommand } from '../../../slash-commands/SlashCommand.js';
 import { ARGUMENT_TYPE, SlashCommandArgument, SlashCommandNamedArgument } from '../../../slash-commands/SlashCommandArgument.js';
 import { commonEnumProviders } from '../../../slash-commands/SlashCommandCommonEnumsProvider.js';
+import { localforage } from '../../../../lib.js';
+import { textgen_types, textgenerationwebui_settings } from '../../../textgen-settings.js';
 
-const storage = new localforage.createInstance({ name: 'SillyTavern_WebSearch' });
+const storage = localforage.createInstance({ name: 'SillyTavern_WebSearch' });
 const extensionPromptMarker = '___WebSearch___';
 
 const WEBSEARCH_SOURCES = {
@@ -19,6 +21,7 @@ const WEBSEARCH_SOURCES = {
     PLUGIN: 'plugin',
     SEARXNG: 'searxng',
     TAVILY: 'tavily',
+    KOBOLDCPP: 'koboldcpp',
 };
 
 const VISIT_TARGETS = {
@@ -180,6 +183,11 @@ async function isSearchAvailable() {
 
     if (extension_settings.websearch.source === WEBSEARCH_SOURCES.TAVILY && !secret_state[SECRET_KEYS.TAVILY]) {
         console.debug('WebSearch: no Tavily key found');
+        return false;
+    }
+
+    if (extension_settings.websearch.source === WEBSEARCH_SOURCES.KOBOLDCPP && !textgenerationwebui_settings.server_urls[textgen_types.KOBOLDCPP]) {
+        console.debug('WebSearch: no KoboldCpp server URL');
         return false;
     }
 
@@ -835,6 +843,41 @@ async function doTavilyQuery(query) {
     return { textBits, links };
 }
 
+/**
+ * Performs a search query via KoboldCpp.
+ * @param {string} query Search query
+ * @returns {Promise<{textBits: string[], links: string[]}>} Lines of search results.
+ */
+async function doKoboldCppQuery(query) {
+    const url = textgenerationwebui_settings.server_urls[textgen_types.KOBOLDCPP];
+    const result = await fetch('/api/search/koboldcpp', {
+        method: 'POST',
+        headers: getRequestHeaders(),
+        body: JSON.stringify({ url, query }),
+    });
+
+    if (!result.ok) {
+        console.debug('WebSearch: search request failed', result.statusText);
+        return;
+    }
+
+    const textBits = [];
+    const links = [];
+    const data = await result.json();
+
+    for (const result of data) {
+        textBits.push([result.title, result.desc, result.content].filter(x => x).join('\n'));
+        links.push(result.url);
+    }
+
+    return { textBits, links };
+}
+
+/**
+ * Performs a search query via SearXNG.
+ * @param {string} query Search query
+ * @returns {Promise<{textBits: string[], links: string[]}>} Extracted text
+ */
 async function doSearxngQuery(query) {
     const result = await fetch('/api/search/searxng', {
         method: 'POST',
@@ -932,6 +975,8 @@ async function performSearchRequest(query, options = { useCache: true }) {
                     return await doSearxngQuery(query);
                 case WEBSEARCH_SOURCES.TAVILY:
                     return await doTavilyQuery(query);
+                case WEBSEARCH_SOURCES.KOBOLDCPP:
+                    return await doKoboldCppQuery(query);
                 default:
                     throw new Error(`Unrecognized search source: ${extension_settings.websearch.source}`);
             }
@@ -1168,7 +1213,7 @@ function registerFunctionTools() {
             displayName: 'Visit Links',
             description: 'Visit the web links and get the content of the relevant pages.',
             parameters: visitLinksSchema,
-            formatMessage: (args) => args?.links ? `Visiting the web links` : '',
+            formatMessage: (args) => args?.links ? 'Visiting the web links' : '',
             action: async (args) => {
                 if (!args) throw new Error('No arguments provided');
                 if (!args.links) throw new Error('No links provided');
@@ -1213,6 +1258,7 @@ jQuery(async () => {
         $('#serpapi_settings').toggle(extension_settings.websearch.source === WEBSEARCH_SOURCES.SERPAPI);
         $('#websearch_searxng_settings').toggle(extension_settings.websearch.source === WEBSEARCH_SOURCES.SEARXNG);
         $('#websearch_tavily_settings').toggle(extension_settings.websearch.source === WEBSEARCH_SOURCES.TAVILY);
+        $('#websearch_koboldcpp_settings').toggle(extension_settings.websearch.source === WEBSEARCH_SOURCES.KOBOLDCPP);
     }
 
     const getContainer = () => $(document.getElementById('websearch_container') ?? document.getElementById('extensions_settings2'));
