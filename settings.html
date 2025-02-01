@@ -132,6 +132,11 @@
                     <input type="checkbox" id="websearch_visit_enabled" />
                     <span>Visit Links</span>
                 </label>
+                <label class="checkbox_label" for="websearch_include_images">
+                    <input type="checkbox" id="websearch_include_images" />
+                    <span>Include Images</span>
+                    <small>(not all sources supported)</small>
+                </label>
                 <div class="marginTopBot5">
                     Text will be extracted from the visited search result pages and saved to:
                 </div>
@@ -146,11 +151,6 @@
                 <label for="websearch_visit_target_none" class="checkbox_label">
                     <input id="websearch_visit_target_none" type="radio" name="websearch_visit_target" value="2" />
                     <span>None (just images)</span>
-                </label>
-                <label class="checkbox_label" for="websearch_include_images">
-                    <input type="checkbox" id="websearch_include_images" />
-                    <span>Include images</span>
-                    <small>(not all sources supported)</small>
                 </label>
                 <label for="websearch_visit_count">Visit Count <small>(max per query)</small></label>
                 <input type="number" class="text_pole" id="websearch_visit_count" value="" min="0" max="10" step="1">

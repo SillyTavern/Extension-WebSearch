@@ -82,7 +82,7 @@ See: <https://github.com/LostRuins/koboldcpp/releases/tag/v1.81.1>
 4. File Header - file header template, inserted at the start of the text file, has an additional `{{query}}` macro.
 5. Block Header - link block template, inserted with the parsed content of every link. Use `{{link}}` macro for page URL and `{{text}}` for page content.
 6. Save Target - where to save the results of scraping. Possible options: trigger message attachments, chat attachments of Data Bank (only on release >=1.12.0), or just images (if the source supports them).
-7. Include images - attach relevant images to the chat. Requires a source that supports images (see below).
+7. Include Images - attach relevant images to the chat. Requires a source that supports images (see below).
 
 ## More info
 
