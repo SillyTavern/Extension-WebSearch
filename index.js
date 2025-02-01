@@ -790,6 +790,12 @@ async function doSerpApiQuery(query) {
         links.push(...data.organic_results.map(x => x.link).filter(x => x));
     }
 
+    if (Array.isArray(data.inline_images)) {
+        for (const image of data.inline_images) {
+            images.push(image.original || image.thumbnail);
+        }
+    }
+
     if (data.answer_box) {
         switch (data.answer_box.type) {
             case 'organic_result':

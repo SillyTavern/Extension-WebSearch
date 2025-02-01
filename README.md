@@ -113,6 +113,7 @@ Example: /websearch links=off snippets=on how to make a sandwich
 2. Knowledge graph. Encyclopedic knowledge about the topic.
 3. Page snippets (max 10). Relevant extracts from the web pages.
 4. Relevant questions (max 10). Questions and answers to similar topics.
+5. Images (max 10). Relevant images.
 
 #### Selenium Plugin and Extras API
 
