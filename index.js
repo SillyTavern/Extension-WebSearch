@@ -1014,39 +1014,73 @@ async function doKoboldCppQuery(query) {
  * @returns {Promise<{textBits: string[], links: string[], images: string[]}>} Extracted text
  */
 async function doSearxngQuery(query) {
-    const result = await fetch('/api/search/searxng', {
-        method: 'POST',
-        headers: getRequestHeaders(),
-        body: JSON.stringify({
-            query,
-            baseUrl: extension_settings.websearch.searxng_url,
-            preferences: extension_settings.websearch.searxng_preferences,
-        }),
-    });
-
-    if (!result.ok) {
-        console.debug('WebSearch: search request failed', result.statusText);
-        return;
-    }
-
-    const data = await result.text();
-    const doc = new DOMParser().parseFromString(data, 'text/html');
-    const textBits = Array.from(doc.querySelectorAll('#urls p.content')).map(x => x.textContent.trim()).filter(x => x);
-    const links = Array.from(doc.querySelectorAll('#urls .url_header, #urls .url_wrapper')).map(x => x.getAttribute('href')).filter(x => x);
+    const textBits = [];
+    const links = [];
     const images = [];
 
-    if (doc.querySelector('.infobox')) {
-        const infoboxText = doc.querySelector('.infobox p')?.textContent?.trim();
-        const infoboxLink = doc.querySelector('.infobox a')?.getAttribute('href');
+    async function searchWeb() {
+        const result = await fetch('/api/search/searxng', {
+            method: 'POST',
+            headers: getRequestHeaders(),
+            body: JSON.stringify({
+                query,
+                baseUrl: extension_settings.websearch.searxng_url,
+                preferences: extension_settings.websearch.searxng_preferences,
+            }),
+        });
 
-        if (infoboxText) {
-            textBits.unshift(infoboxText);
+        if (!result.ok) {
+            console.debug('WebSearch: search request failed', result.statusText);
+            return;
         }
 
-        if (infoboxLink) {
-            links.unshift(infoboxLink);
+        const data = await result.text();
+        const doc = new DOMParser().parseFromString(data, 'text/html');
+        textBits.push(...Array.from(doc.querySelectorAll('#urls p.content')).map(x => x.textContent.trim()).filter(x => x));
+        links.push(...Array.from(doc.querySelectorAll('#urls .url_header, #urls .url_wrapper')).map(x => x.getAttribute('href')).filter(x => x));
+
+        if (doc.querySelector('.infobox')) {
+            const infoboxText = doc.querySelector('.infobox p')?.textContent?.trim();
+            const infoboxLink = doc.querySelector('.infobox a')?.getAttribute('href');
+
+            if (infoboxText) {
+                textBits.unshift(infoboxText);
+            }
+
+            if (infoboxLink) {
+                links.unshift(infoboxLink);
+            }
         }
     }
+
+    async function searchImages() {
+        if (!extension_settings.websearch.include_images) {
+            return;
+        }
+
+        const result = await fetch('/api/search/searxng', {
+            method: 'POST',
+            headers: getRequestHeaders(),
+            body: JSON.stringify({
+                query,
+                baseUrl: extension_settings.websearch.searxng_url,
+                preferences: extension_settings.websearch.searxng_preferences,
+                categories: 'images',
+            }),
+        });
+
+        if (!result.ok) {
+            console.debug('WebSearch: search request failed', result.statusText);
+            return;
+        }
+
+
+        const data = await result.text();
+        const doc = new DOMParser().parseFromString(data, 'text/html');
+        images.push(...Array.from(doc.querySelectorAll('#urls .detail img')).map(x => x.getAttribute('data-src')).filter(x => x));
+    }
+
+    await Promise.allSettled([searchWeb(), searchImages()]);
 
     return { textBits, links, images };
 }

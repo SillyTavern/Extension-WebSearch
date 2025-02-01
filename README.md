@@ -126,6 +126,7 @@ Example: /websearch links=off snippets=on how to make a sandwich
 
 1. Infobox.
 2. Page snippets.
+3. Images.
 
 #### Tavily AI
 
