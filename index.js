@@ -1,10 +1,10 @@
-import { appendMediaToMessage, extension_prompt_types, getRequestHeaders, saveSettingsDebounced, setExtensionPrompt, substituteParamsExtended } from '../../../../script.js';
+import { appendMediaToMessage, extension_prompt_types, getRequestHeaders, saveSettingsDebounced, setExtensionPrompt, substituteParamsExtended, name2 } from '../../../../script.js';
 import { appendFileContent, uploadFileAttachment } from '../../../chats.js';
 import { doExtrasFetch, extension_settings, getApiUrl, getContext, modules, renderExtensionTemplateAsync } from '../../../extensions.js';
 import { registerDebugFunction } from '../../../power-user.js';
 import { SECRET_KEYS, secret_state, writeSecret } from '../../../secrets.js';
 import { POPUP_RESULT, POPUP_TYPE, callGenericPopup } from '../../../popup.js';
-import { extractTextFromHTML, isFalseBoolean, isTrueBoolean, onlyUnique, trimToEndSentence, trimToStartSentence, getStringHash, regexFromString } from '../../../utils.js';
+import { extractTextFromHTML, isFalseBoolean, isTrueBoolean, onlyUnique, trimToEndSentence, trimToStartSentence, getStringHash, regexFromString, isDataURL, bufferToBase64, saveBase64AsFile } from '../../../utils.js';
 import { SlashCommandParser } from '../../../slash-commands/SlashCommandParser.js';
 import { SlashCommand } from '../../../slash-commands/SlashCommand.js';
 import { ARGUMENT_TYPE, SlashCommandArgument, SlashCommandNamedArgument } from '../../../slash-commands/SlashCommandArgument.js';
@@ -27,6 +27,7 @@ const WEBSEARCH_SOURCES = {
 const VISIT_TARGETS = {
     MESSAGE: 0,
     DATA_BANK: 1,
+    NONE: 2,
 };
 
 /**
@@ -116,6 +117,7 @@ const defaultSettings = {
     regex: [],
     searxng_url: '',
     searxng_preferences: '',
+    include_images: false,
 };
 
 /**
@@ -272,16 +274,17 @@ async function onWebSearchPrompt(chat, _maxContext, _abort, type) {
             return;
         }
 
-        const { text, links } = await performSearchRequest(searchQuery, { useCache: true });
+        const { text, links, images } = await performSearchRequest(searchQuery, { useCache: true });
 
         if (!text) {
             console.debug('WebSearch: search failed');
             return;
         }
 
-        if (extension_settings.websearch.visit_enabled && triggerMessage && Array.isArray(links) && links.length > 0) {
+        const hasVisitTargets = (Array.isArray(links) && links.length > 0) || (Array.isArray(images) && images.length > 0);
+        if (extension_settings.websearch.visit_enabled && triggerMessage && hasVisitTargets) {
             const messageId = Number(triggerMessage.index);
-            const visitResult = await visitLinksAndAttachToMessage(searchQuery, links, messageId);
+            const visitResult = await visitLinksAndAttachToMessage(searchQuery, links, images, messageId);
 
             if (visitResult && visitResult.file) {
                 triggerMessage.extra = Object.assign((triggerMessage.extra || {}), { file: visitResult.file });
@@ -501,10 +504,11 @@ async function visitLinks(query, links) {
  * Visits the provided web links and attaches the resulting text to the chat as a file.
  * @param {string} query Search query
  * @param {string[]} links Web links to visit
+ * @param {string[]} images Image links to visit
  * @param {number} messageId Message ID that triggered the search
  * @returns {Promise<{fileContent: string, file: object}>} File content and file object
  */
-async function visitLinksAndAttachToMessage(query, links, messageId) {
+async function visitLinksAndAttachToMessage(query, links, images, messageId) {
     if (isNaN(messageId)) {
         console.debug('WebSearch: invalid message ID');
         return;
@@ -512,19 +516,52 @@ async function visitLinksAndAttachToMessage(query, links, messageId) {
 
     const context = getContext();
     const message = context.chat[messageId];
+    const updateMessageMedia = () => {
+        const messageElement = $(`.mes[mesid="${messageId}"]`);
+
+        if (messageElement.length === 0) {
+            console.debug('WebSearch: failed to find the message element');
+            return;
+        }
+
+        appendMediaToMessage(message, messageElement);
+    };
 
     if (!message) {
         console.debug('WebSearch: failed to find the message');
         return;
     }
 
-    if (message?.extra?.file) {
-        console.debug('WebSearch: message already has a file attachment');
+    if (!message.extra) {
+        message.extra = {};
+    }
+
+    if (extension_settings.websearch.include_images && Array.isArray(images) && images.length > 0) {
+        try {
+            const alreadyHasImages = Array.isArray(message.extra.image_swipes) && message.extra.image_swipes.length > 0;
+            if (!alreadyHasImages) {
+                const imageSwipes = await visitImages(images);
+
+                if (imageSwipes.length > 0) {
+                    message.extra.image = imageSwipes[0];
+                    message.extra.image_swipes = imageSwipes;
+                    message.extra.inline_image = true;
+                }
+            }
+            updateMessageMedia();
+        } catch (error) {
+            console.error('WebSearch: failed to attach images', error);
+        }
+    }
+
+    if (extension_settings.websearch.visit_target === VISIT_TARGETS.NONE) {
+        console.debug('WebSearch: visit target is set to none');
         return;
     }
 
-    if (!message.extra) {
-        message.extra = {};
+    if (message?.extra?.file) {
+        console.debug('WebSearch: message already has a file attachment');
+        return;
     }
 
     try {
@@ -561,19 +598,46 @@ async function visitLinksAndAttachToMessage(query, links, messageId) {
                 name: fileName,
             };
 
-            const messageElement = $(`.mes[mesid="${messageId}"]`);
-
-            if (messageElement.length === 0) {
-                console.debug('WebSearch: failed to find the message element');
-                return;
-            }
-
-            appendMediaToMessage(message, messageElement);
+            updateMessageMedia();
             return { fileContent: fileText, file: message.extra.file };
         }
     } catch (error) {
         console.error('WebSearch: failed to attach the file', error);
     }
+}
+
+/**
+ * Visit the provided image links and attach the resulting files to the chat.
+ * @param {string[]} images Array of image URLs
+ * @returns {Promise<string[]>} Resulting image URLs
+ */
+async function visitImages(images) {
+    if (!Array.isArray(images) || images.length === 0) {
+        console.debug('WebSearch: no images to visit');
+        return [];
+    }
+
+    const imageSwipes = [];
+    const visitPromises = [];
+    const visitCount = extension_settings.websearch.visit_count;
+
+    for (let i = 0; i < Math.min(visitCount, images.length); i++) {
+        const image = images[i];
+        visitPromises.push(visitImage(image));
+    }
+
+    const visitResult = await Promise.allSettled(visitPromises);
+
+    for (const result of visitResult) {
+        if (result.status === 'fulfilled' && result.value) {
+            const image = result.value;
+            if (image) {
+                imageSwipes.push(image);
+            }
+        }
+    }
+
+    return imageSwipes;
 }
 
 /**
@@ -625,7 +689,7 @@ async function visitLink(link) {
         const result = await fetch('/api/search/visit', {
             method: 'POST',
             headers: getRequestHeaders(),
-            body: JSON.stringify({ url: link }),
+            body: JSON.stringify({ url: link, html: true }),
         });
 
         if (!result.ok) {
@@ -643,9 +707,61 @@ async function visitLink(link) {
 }
 
 /**
+ * Visits the provided web link and extracts the data as a Blob.
+ * @param {string} url URL to visit
+ * @returns {Promise<Blob>} Extracted data
+ */
+async function visitBlobUrl(url) {
+    try {
+        // Directly download the data URL
+        if (isDataURL(url)) {
+            const data = await fetch(url);
+            return await data.blob();
+        }
+
+        const result = await fetch('/api/search/visit', {
+            method: 'POST',
+            headers: getRequestHeaders(),
+            body: JSON.stringify({ url: url, html: false }),
+        });
+
+        if (!result.ok) {
+            console.debug(`WebSearch: visit request failed with status ${result.statusText}`, url);
+            return;
+        }
+
+        const data = await result.blob();
+        return data;
+    } catch (error) {
+        console.error('WebSearch: visit blob failed', error);
+        return null;
+    }
+}
+
+/**
+ * Download and save the provided image URL as a local file.
+ * @param {string} url Image URL
+ * @returns {Promise<string>} Link to local image
+ */
+async function visitImage(url) {
+    try {
+        const data = await visitBlobUrl(url);
+        if (!data) {
+            return null;
+        }
+        const base64Data = await bufferToBase64(data);
+        const extension = data.type?.split('/')?.[1] || 'jpeg';
+        return await saveBase64AsFile(base64Data, name2, `search-result-${Date.now()}`, extension);
+    } catch (error) {
+        console.error('WebSearch: image scraping failed', error);
+        return null;
+    }
+}
+
+/**
  * Performs a search query via SerpApi.
  * @param {string} query Search query
- * @returns {Promise<{textBits: string[], links: string[]}>} Lines of search results.
+ * @returns {Promise<{textBits: string[], links: string[], images: string[]}>} Lines of search results.
  */
 async function doSerpApiQuery(query) {
     // Perform the search
@@ -666,8 +782,9 @@ async function doSerpApiQuery(query) {
 
     // Extract the relevant information
     // Order: 1. Answer Box, 2. Knowledge Graph, 3. Organic Results (max 5), 4. Related Questions (max 5)
-    let textBits = [];
-    let links = [];
+    const textBits = [];
+    const links = [];
+    const images = [];
 
     if (Array.isArray(data.organic_results)) {
         links.push(...data.organic_results.map(x => x.link).filter(x => x));
@@ -742,13 +859,13 @@ async function doSerpApiQuery(query) {
         }
     }
 
-    return { textBits, links };
+    return { textBits, links, images };
 }
 
 /**
  * Performs a search query via Extras API.
  * @param {string} query Search query
- * @returns {Promise<{textBits: string[], links: string[]}>} Lines of search results.
+ * @returns {Promise<{textBits: string[], links: string[], images: string[]}>} Lines of search results.
  */
 async function doExtrasApiQuery(query) {
     const url = new URL(getApiUrl());
@@ -776,13 +893,14 @@ async function doExtrasApiQuery(query) {
 
     const textBits = data.results.split('\n');
     const links = Array.isArray(data.links) ? data.links : [];
-    return { textBits, links };
+    const images = Array.isArray(data.images) ? data.images : [];
+    return { textBits, links, images };
 }
 
 /**
  * Performs a search query via the Selenium search plugin.
  * @param {string} query Search query
- * @returns {Promise<{textBits: string[], links: string[]}>} Lines of search results.
+ * @returns {Promise<{textBits: string[], links: string[], images: string[]}>} Lines of search results.
  */
 async function doSeleniumPluginQuery(query) {
     const result = await fetch('/api/plugins/selenium/search', {
@@ -791,6 +909,7 @@ async function doSeleniumPluginQuery(query) {
         body: JSON.stringify({
             query: query,
             engine: extension_settings.websearch.extras_engine,
+            include_images: extension_settings.websearch.include_images,
         }),
     });
 
@@ -805,19 +924,23 @@ async function doSeleniumPluginQuery(query) {
 
     const textBits = data.results.split('\n');
     const links = Array.isArray(data.links) ? data.links : [];
-    return { textBits, links };
+    const images = Array.isArray(data.images) ? data.images : [];
+    return { textBits, links, images };
 }
 
 /**
  * Performs a search query via Tavily.
  * @param {string} query Search query
- * @returns {Promise<{textBits: string[], links: string[]}>} Lines of search results.
+ * @returns {Promise<{textBits: string[], links: string[], images: string[]}>} Lines of search results.
  */
 async function doTavilyQuery(query) {
     const result = await fetch('/api/search/tavily', {
         method: 'POST',
         headers: getRequestHeaders(),
-        body: JSON.stringify({ query }),
+        body: JSON.stringify({
+            query,
+            include_images: extension_settings.websearch.include_images,
+        }),
     });
 
     if (!result.ok) {
@@ -827,6 +950,7 @@ async function doTavilyQuery(query) {
 
     const textBits = [];
     const links = [];
+    const images = [];
     const data = await result.json();
 
     if (data.answer) {
@@ -840,13 +964,17 @@ async function doTavilyQuery(query) {
         });
     }
 
-    return { textBits, links };
+    if (Array.isArray(data.images)) {
+        images.push(...data.images);
+    }
+
+    return { textBits, links, images };
 }
 
 /**
  * Performs a search query via KoboldCpp.
  * @param {string} query Search query
- * @returns {Promise<{textBits: string[], links: string[]}>} Lines of search results.
+ * @returns {Promise<{textBits: string[], links: string[], images: string[]}>} Lines of search results.
  */
 async function doKoboldCppQuery(query) {
     const url = textgenerationwebui_settings.server_urls[textgen_types.KOBOLDCPP];
@@ -863,6 +991,7 @@ async function doKoboldCppQuery(query) {
 
     const textBits = [];
     const links = [];
+    const images = [];
     const data = await result.json();
 
     for (const result of data) {
@@ -870,19 +999,23 @@ async function doKoboldCppQuery(query) {
         links.push(result.url);
     }
 
-    return { textBits, links };
+    return { textBits, links, images };
 }
 
 /**
  * Performs a search query via SearXNG.
  * @param {string} query Search query
- * @returns {Promise<{textBits: string[], links: string[]}>} Extracted text
+ * @returns {Promise<{textBits: string[], links: string[], images: string[]}>} Extracted text
  */
 async function doSearxngQuery(query) {
     const result = await fetch('/api/search/searxng', {
         method: 'POST',
         headers: getRequestHeaders(),
-        body: JSON.stringify({ query, baseUrl: extension_settings.websearch.searxng_url, preferences: extension_settings.websearch.searxng_preferences }),
+        body: JSON.stringify({
+            query,
+            baseUrl: extension_settings.websearch.searxng_url,
+            preferences: extension_settings.websearch.searxng_preferences,
+        }),
     });
 
     if (!result.ok) {
@@ -894,6 +1027,7 @@ async function doSearxngQuery(query) {
     const doc = new DOMParser().parseFromString(data, 'text/html');
     const textBits = Array.from(doc.querySelectorAll('#urls p.content')).map(x => x.textContent.trim()).filter(x => x);
     const links = Array.from(doc.querySelectorAll('#urls .url_header, #urls .url_wrapper')).map(x => x.getAttribute('href')).filter(x => x);
+    const images = [];
 
     if (doc.querySelector('.infobox')) {
         const infoboxText = doc.querySelector('.infobox p')?.textContent?.trim();
@@ -908,7 +1042,7 @@ async function doSearxngQuery(query) {
         }
     }
 
-    return { textBits, links };
+    return { textBits, links, images };
 }
 
 /**
@@ -939,7 +1073,7 @@ async function probeSeleniumSearchPlugin() {
  * @param {string} query Search query
  * @param {SearchRequestOptions} options Search request options
  * @typedef {{useCache?: boolean}} SearchRequestOptions
- * @returns {Promise<{text:string, links: string[]}>} Extracted text
+ * @returns {Promise<{text:string, links: string[], images: string[]}>} Extracted text
  */
 async function performSearchRequest(query, options = { useCache: true }) {
     // Check if the query is cached
@@ -955,12 +1089,12 @@ async function performSearchRequest(query, options = { useCache: true }) {
             await storage.removeItem(cacheKey);
         } else {
             console.debug('WebSearch: cached result is valid');
-            return { text: cachedResult.text, links: cachedResult.links };
+            return { text: cachedResult.text, links: cachedResult.links, images: cachedResult.images };
         }
     }
 
     /**
-     * @returns {Promise<{textBits: string[], links: string[]}>}
+     * @returns {Promise<{textBits: string[], links: string[], images: string[]}>}
      */
     async function callSearchSource() {
         try {
@@ -982,11 +1116,11 @@ async function performSearchRequest(query, options = { useCache: true }) {
             }
         } catch (error) {
             console.error('WebSearch: search failed', error);
-            return { textBits: [], links: [] };
+            return { textBits: [], links: [], images: [] };
         }
     }
 
-    const { textBits, links } = await callSearchSource();
+    const { textBits, links, images } = await callSearchSource();
     const budget = extension_settings.websearch.budget;
     let text = '';
 
@@ -1012,17 +1146,22 @@ async function performSearchRequest(query, options = { useCache: true }) {
 
     if (!text) {
         console.debug('WebSearch: search produced no text');
-        return { text: '', links: [] };
+        return { text: '', links: [], images: [] };
     }
 
     console.log(`WebSearch: extracted text (length = ${text.length}, budget = ${budget})`, text);
 
     // Save the result to cache
     if (options.useCache) {
-        await storage.setItem(cacheKey, { text: text, links: links, timestamp: Date.now() });
+        await storage.setItem(cacheKey, {
+            text: text,
+            links: links,
+            images: images,
+            timestamp: Date.now(),
+        });
     }
 
-    return { text, links };
+    return { text, links, images };
 }
 
 window['WebSearch_Intercept'] = onWebSearchPrompt;
@@ -1424,6 +1563,12 @@ jQuery(async () => {
     $('#websearch_use_function_tool').on('change', () => {
         extension_settings.websearch.use_function_tool = !!$('#websearch_use_function_tool').prop('checked');
         registerFunctionTools();
+        saveSettingsDebounced();
+    });
+
+    $('#websearch_include_images').prop('checked', extension_settings.websearch.include_images);
+    $('#websearch_include_images').on('change', () => {
+        extension_settings.websearch.include_images = !!$('#websearch_include_images').prop('checked');
         saveSettingsDebounced();
     });
 
