@@ -81,7 +81,8 @@ See: <https://github.com/LostRuins/koboldcpp/releases/tag/v1.81.1>
 3. Visit Domain Blacklist - site domains to be excluded from visiting. One per line.
 4. File Header - file header template, inserted at the start of the text file, has an additional `{{query}}` macro.
 5. Block Header - link block template, inserted with the parsed content of every link. Use `{{link}}` macro for page URL and `{{text}}` for page content.
-6. Save Target - where to save the results of scraping. Possible options: trigger message attachments, or chat attachments of Data Bank (only on release >=1.12.0).
+6. Save Target - where to save the results of scraping. Possible options: trigger message attachments, chat attachments of Data Bank (only on release >=1.12.0), or just images (if the source supports them).
+7. Include images - attach relevant images to the chat. Requires a source that supports images (see below).
 
 ## More info
 
@@ -118,6 +119,8 @@ Example: /websearch links=off snippets=on how to make a sandwich
 1. Google - answer box, knowledge graph, page snippets.
 2. DuckDuckGo - page snippets.
 
+**Selenium Plugin** can additionaly provide images.
+
 #### SearXNG
 
 1. Infobox.
@@ -127,6 +130,7 @@ Example: /websearch links=off snippets=on how to make a sandwich
 
 1. Answer.
 2. Page contents.
+3. Images (up to 5).
 
 #### KoboldCpp
 
