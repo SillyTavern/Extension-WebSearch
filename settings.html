@@ -76,10 +76,14 @@
                 <h4>Prompt Settings</h4>
                 <label for="websearch_budget">Prompt Budget <small>(text characters)</small></label>
                 <input type="number" class="text_pole" id="websearch_budget" value="">
-                <label for="websearch_template">Insertion Template</label>
+                <label for="websearch_template">Injection Template</label>
                 <textarea id="websearch_template" class="text_pole textarea_compact autoSetHeight" rows="2" placeholder="Use {{query}} and {{text}} macro."></textarea>
                 <label for="websearch_position">Injection Position</label>
                 <div class="radio_group">
+                    <label>
+                        <input type="radio" name="websearch_position" value="-1" />
+                        None (do not inject)
+                    </label>
                     <label>
                         <input type="radio" name="websearch_position" value="2" />
                         Before Main Prompt / Story String
@@ -140,6 +144,10 @@
                 <div class="marginTopBot5">
                     Text will be extracted from the visited search result pages and saved to:
                 </div>
+                <label for="websearch_visit_target_none" class="checkbox_label">
+                    <input id="websearch_visit_target_none" type="radio" name="websearch_visit_target" value="2" />
+                    <span>None (just images)</span>
+                </label>
                 <label for="websearch_visit_target_message" class="checkbox_label">
                     <input id="websearch_visit_target_message" type="radio" name="websearch_visit_target" value="0" />
                     <span>Message attachment</span>
@@ -147,10 +155,6 @@
                 <label for="websearch_visit_target_databank" class="checkbox_label">
                     <input id="websearch_visit_target_databank" type="radio" name="websearch_visit_target" value="1" />
                     <span>Data Bank (chat)</span>
-                </label>
-                <label for="websearch_visit_target_none" class="checkbox_label">
-                    <input id="websearch_visit_target_none" type="radio" name="websearch_visit_target" value="2" />
-                    <span>None (just images)</span>
                 </label>
                 <label for="websearch_visit_count">Visit Count <small>(max per query)</small></label>
                 <input type="number" class="text_pole" id="websearch_visit_count" value="" min="0" max="10" step="1">
