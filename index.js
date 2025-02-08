@@ -22,6 +22,7 @@ const WEBSEARCH_SOURCES = {
     SEARXNG: 'searxng',
     TAVILY: 'tavily',
     KOBOLDCPP: 'koboldcpp',
+    SERPER: 'serper',
 };
 
 const VISIT_TARGETS = {
@@ -185,6 +186,11 @@ async function isSearchAvailable() {
 
     if (extension_settings.websearch.source === WEBSEARCH_SOURCES.TAVILY && !secret_state[SECRET_KEYS.TAVILY]) {
         console.debug('WebSearch: no Tavily key found');
+        return false;
+    }
+
+    if (extension_settings.websearch.source === WEBSEARCH_SOURCES.SERPER && !secret_state[SECRET_KEYS.SERPER]) {
+        console.debug('WebSearch: no Serper key found');
         return false;
     }
 
@@ -543,6 +549,7 @@ async function visitLinksAndAttachToMessage(query, links, images, messageId) {
                 const imageSwipes = await visitImages(images);
 
                 if (imageSwipes.length > 0) {
+                    message.extra.title = query;
                     message.extra.image = imageSwipes[0];
                     message.extra.image_swipes = imageSwipes;
                     message.extra.inline_image = true;
@@ -1009,6 +1016,81 @@ async function doKoboldCppQuery(query) {
 }
 
 /**
+ * Performs a search query via Serper.
+ * @param {string} query Search query
+ * @returns {Promise<{textBits: string[], links: string[], images: string[]}>} Extracted text
+ */
+async function doSerperQuery(query) {
+    const textBits = [];
+    const links = [];
+    const images = [];
+
+    async function searchWeb() {
+        const result = await fetch('/api/search/serper', {
+            method: 'POST',
+            headers: getRequestHeaders(),
+            body: JSON.stringify({ query }),
+        });
+
+        if (!result.ok) {
+            console.debug('WebSearch: search request failed', result.statusText);
+            return;
+        }
+
+        const data = await result.json();
+        if (data.answerBox) {
+            textBits.push(`${data.answerBox.title} ${data.answerBox.answer}`);
+        }
+
+        if (data.knowledgeGraph) {
+            textBits.push(`${data.knowledgeGraph.title} ${data.knowledgeGraph.type}`);
+            Object.entries(data.knowledgeGraph.attributes ?? {}).forEach(([key, value]) => {
+                textBits.push(`${key}: ${value}`);
+            });
+        }
+
+        if (Array.isArray(data.organic)) {
+            textBits.push(...data.organic.map(x => x.snippet));
+            links.push(...data.organic.map(x => x.link));
+        }
+
+        if (Array.isArray(data.peopleAlsoAsk)) {
+            textBits.push(...data.peopleAlsoAsk.map(x => `${x.question} ${x.snippet}`));
+            links.push(...data.peopleAlsoAsk.map(x => x.link));
+        }
+
+        if (Array.isArray(data.images) && extension_settings.websearch.include_images) {
+            images.push(...data.images.map(x => x.imageUrl));
+        }
+    }
+
+    async function searchImages() {
+        if (!extension_settings.websearch.include_images) {
+            return;
+        }
+
+        const result = await fetch('/api/search/serper', {
+            method: 'POST',
+            headers: getRequestHeaders(),
+            body: JSON.stringify({ query, images: true }),
+        });
+
+        if (!result.ok) {
+            console.debug('WebSearch: search request failed', result.statusText);
+            return;
+        }
+
+        const data = await result.json();
+        if (Array.isArray(data.images)) {
+            images.push(...data.images.map(x => x.imageUrl));
+        }
+    }
+
+    await Promise.allSettled([searchWeb(), searchImages()]);
+    return { textBits, links, images };
+}
+
+/**
  * Performs a search query via SearXNG.
  * @param {string} query Search query
  * @returns {Promise<{textBits: string[], links: string[], images: string[]}>} Extracted text
@@ -1151,6 +1233,8 @@ async function performSearchRequest(query, options = { useCache: true }) {
                     return await doTavilyQuery(query);
                 case WEBSEARCH_SOURCES.KOBOLDCPP:
                     return await doKoboldCppQuery(query);
+                case WEBSEARCH_SOURCES.SERPER:
+                    return await doSerperQuery(query);
                 default:
                     throw new Error(`Unrecognized search source: ${extension_settings.websearch.source}`);
             }
@@ -1183,6 +1267,10 @@ async function performSearchRequest(query, options = { useCache: true }) {
             break;
         }
     }
+
+    // Remove duplicates
+    links.splice(0, links.length, ...links.filter(onlyUnique));
+    images.splice(0, images.length, ...images.filter(onlyUnique));
 
     if (!text) {
         console.debug('WebSearch: search produced no text');
@@ -1419,6 +1507,36 @@ function registerFunctionTools() {
     }
 }
 
+/**
+ * Manages API key storage and UI updates for third-party services
+ * @param {string} keyType - The SECRET_KEYS enum value
+ * @param {string} serviceName - Display name of the service
+ * @param {JQuery} buttonElement - jQuery button element reference
+ */
+async function handleApiKeyManagement(keyType, serviceName, buttonElement) {
+    const key = await callGenericPopup(`Add a ${serviceName} key`, POPUP_TYPE.INPUT, '', {
+        rows: 2,
+        customButtons: [{
+            text: 'Remove Key',
+            appendAtEnd: true,
+            result: POPUP_RESULT.NEGATIVE,
+            action: async () => {
+                await writeSecret(keyType, '');
+                buttonElement.toggleClass('success', !!secret_state[keyType]);
+                toastr.success('API Key removed');
+            },
+        }],
+    });
+
+    if (key) {
+        await writeSecret(keyType, String(key).trim());
+        toastr.success('API Key saved');
+    }
+
+    buttonElement.toggleClass('success', !!secret_state[keyType]);
+}
+
+
 jQuery(async () => {
     if (!extension_settings.websearch) {
         extension_settings.websearch = structuredClone(defaultSettings);
@@ -1438,6 +1556,7 @@ jQuery(async () => {
         $('#websearch_searxng_settings').toggle(extension_settings.websearch.source === WEBSEARCH_SOURCES.SEARXNG);
         $('#websearch_tavily_settings').toggle(extension_settings.websearch.source === WEBSEARCH_SOURCES.TAVILY);
         $('#websearch_koboldcpp_settings').toggle(extension_settings.websearch.source === WEBSEARCH_SOURCES.KOBOLDCPP);
+        $('#websearch_serper_settings').toggle(extension_settings.websearch.source === WEBSEARCH_SOURCES.SERPER);
     }
 
     const getContainer = () => $(document.getElementById('websearch_container') ?? document.getElementById('extensions_settings2'));
@@ -1459,51 +1578,14 @@ jQuery(async () => {
         extension_settings.websearch.extras_engine = String($('#websearch_extras_engine').find(':selected').val());
         saveSettingsDebounced();
     });
-    $('#serpapi_key').toggleClass('success', !!secret_state[SECRET_KEYS.SERPAPI]);
     $('#serpapi_key').on('click', async () => {
-        const key = await callGenericPopup('Add a SerpApi key', POPUP_TYPE.INPUT, '', {
-            rows: 2,
-            customButtons: [{
-                text: 'Remove Key',
-                appendAtEnd: true,
-                result: POPUP_RESULT.NEGATIVE,
-                action: async () => {
-                    await writeSecret(SECRET_KEYS.SERPAPI, '');
-                    $('#serpapi_key').toggleClass('success', !!secret_state[SECRET_KEYS.SERPAPI]);
-                    toastr.success('API Key removed');
-                },
-            }],
-        });
-
-        if (key) {
-            await writeSecret(SECRET_KEYS.SERPAPI, String(key).trim());
-            toastr.success('API Key saved');
-        }
-
-        $('#serpapi_key').toggleClass('success', !!secret_state[SECRET_KEYS.SERPAPI]);
+        await handleApiKeyManagement(SECRET_KEYS.SERPAPI, 'SerpApi', $('#serpapi_key'));
     });
-    $('#tavily_key').toggleClass('success', !!secret_state[SECRET_KEYS.TAVILY]);
     $('#tavily_key').on('click', async () => {
-        const key = await callGenericPopup('Add a Tavily key', POPUP_TYPE.INPUT, '', {
-            rows: 2,
-            customButtons: [{
-                text: 'Remove Key',
-                appendAtEnd: true,
-                result: POPUP_RESULT.NEGATIVE,
-                action: async () => {
-                    await writeSecret(SECRET_KEYS.TAVILY, '');
-                    $('#tavily_key').toggleClass('success', !!secret_state[SECRET_KEYS.TAVILY]);
-                    toastr.success('API Key removed');
-                },
-            }],
-        });
-
-        if (key) {
-            await writeSecret(SECRET_KEYS.TAVILY, String(key).trim());
-            toastr.success('API Key saved');
-        }
-
-        $('#tavily_key').toggleClass('success', !!secret_state[SECRET_KEYS.TAVILY]);
+        await handleApiKeyManagement(SECRET_KEYS.TAVILY, 'Tavily', $('#tavily_key'));
+    });
+    $('#serper_key').on('click', async () => {
+        await handleApiKeyManagement(SECRET_KEYS.SERPER, 'Serper', $('#serper_key'));
     });
     $('#websearch_budget').val(extension_settings.websearch.budget);
     $('#websearch_budget').on('input', () => {

@@ -12,12 +12,13 @@
                 </label>
                 <h4>Source</h4>
                 <select id="websearch_source">
-                    <option value="serpapi">SerpApi</option>
-                    <option value="searxng">SearXNG</option>
+                    <option value="extras">Extras API (deprecated)</option>
                     <option value="koboldcpp">KoboldCpp</option>
-                    <option value="tavily">Tavily</option>
-                    <option value="extras">Extras API</option>
+                    <option value="searxng">SearXNG</option>
                     <option value="plugin">Selenium Plugin</option>
+                    <option value="serpapi">SerpApi</option>
+                    <option value="serper">Serper</option>
+                    <option value="tavily">Tavily</option>
                 </select>
                 <div id="serpapi_settings">
                     <div class="flex-container alignItemsBaseline">
@@ -56,6 +57,17 @@
                             <a href="https://app.tavily.com/" target="_blank" rel="noopener noreferrer">Tavily AI Key</a>
                         </h4>
                         <div id="tavily_key" class="menu_button menu_button_icon">
+                            <i class="fa-solid fa-key"></i>
+                            <span>Click to set</span>
+                        </div>
+                    </div>
+                </div>
+                <div id="websearch_serper_settings">
+                    <div class="flex-container alignItemsBaseline">
+                        <h4 for="serper_key" class="flex1 margin0">
+                            <a href="https://serper.dev/" target="_blank" rel="noopener noreferrer">Serper Key</a>
+                        </h4>
+                        <div id="serper_key" class="menu_button menu_button_icon">
                             <i class="fa-solid fa-key"></i>
                             <span>Click to set</span>
                         </div>
