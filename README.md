@@ -44,6 +44,12 @@ KoboldCpp URL must be provided in Text Completion API settings. KoboldCpp versio
 
 See: <https://github.com/LostRuins/koboldcpp/releases/tag/v1.81.1>
 
+### Serper
+
+Requires an API key.
+
+Get the key here: <https://serper.dev/>
+
 ## How to use
 
 1. Make sure you use the latest version of SillyTavern (staging branch preferred).
@@ -109,13 +115,21 @@ Example: /websearch links=off snippets=on how to make a sandwich
 
 ### What can be included in the search result?
 
+**Thesaurus:**
+
+- Answer box: Direct answer to the question.
+- Knowledge graph: Encyclopedic knowledge about the topic.
+- Page snippets: Relevant extracts from the web pages.
+- Relevant questions: Questions and answers to similar topics.
+- Images: Relevant images.
+
 #### SerpApi
 
-1. Answer box. Direct answer to the question.
-2. Knowledge graph. Encyclopedic knowledge about the topic.
-3. Page snippets (max 10). Relevant extracts from the web pages.
-4. Relevant questions (max 10). Questions and answers to similar topics.
-5. Images (max 10). Relevant images.
+1. Answer box.
+2. Knowledge graph.
+3. Page snippets (max 10).
+4. Relevant questions (max 10).
+5. Images (max 10).
 
 #### Selenium Plugin and Extras API
 
@@ -140,3 +154,11 @@ Example: /websearch links=off snippets=on how to make a sandwich
 
 1. Page titles.
 2. Page snippets.
+
+#### Serper
+
+1. Answer box.
+2. Knowledge graph.
+3. Page snippets.
+4. Relevant questions.
+5. Images.
