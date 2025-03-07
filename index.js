@@ -253,7 +253,7 @@ async function onWebSearchPrompt(chat, _maxContext, _abort, type) {
         let searchQuery = '';
         let triggerMessage = null;
 
-        for (let message of chat.slice().reverse()) {
+        for (const message of chat.slice().reverse()) {
             if (message.is_system) {
                 continue;
             }
@@ -486,7 +486,7 @@ async function visitLinks(query, links) {
 
     let linkResult = '';
 
-    for (let result of visitResult) {
+    for (const result of visitResult) {
         if (result.status === 'fulfilled' && result.value) {
             const { link, text } = result.value;
 
