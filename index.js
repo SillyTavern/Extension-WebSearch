@@ -222,13 +222,13 @@ async function onWebSearchPrompt(chat, _maxContext, _abort, type) {
         return;
     }
 
-    if (extension_settings.websearch.use_function_tool && canUseFunctionTool()) {
-        console.debug('WebSearch: using the function tool');
+    if (!extension_settings.websearch.enabled) {
+        console.debug('WebSearch: extension is disabled');
         return;
     }
 
-    if (!extension_settings.websearch.enabled) {
-        console.debug('WebSearch: extension is disabled');
+    if (extension_settings.websearch.use_function_tool && canUseFunctionTool()) {
+        console.debug('WebSearch: using the function tool');
         return;
     }
 
@@ -1424,8 +1424,9 @@ function registerFunctionTools() {
             return;
         }
 
-        if (!extension_settings.websearch.use_function_tool) {
+        if (!extension_settings.websearch.use_function_tool || !extension_settings.websearch.enabled) {
             unregisterFunctionTool('WebSearch');
+            unregisterFunctionTool('VisitLinks');
             return;
         }
 
@@ -1571,6 +1572,7 @@ jQuery(async () => {
     $('#websearch_enabled').on('change', () => {
         extension_settings.websearch.enabled = !!$('#websearch_enabled').prop('checked');
         setExtensionPrompt(extensionPromptMarker, '', extension_settings.websearch.position, extension_settings.websearch.depth);
+        registerFunctionTools();
         saveSettingsDebounced();
     });
     $('#websearch_extras_engine').val(extension_settings.websearch.extras_engine);
