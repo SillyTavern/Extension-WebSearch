@@ -12,6 +12,9 @@ import { commonEnumProviders } from '../../../slash-commands/SlashCommandCommonE
 import { localforage } from '../../../../lib.js';
 import { textgen_types, textgenerationwebui_settings } from '../../../textgen-settings.js';
 
+const { ensureMessageMediaIsArray } = SillyTavern.getContext();
+const supportsMediaArrays = typeof ensureMessageMediaIsArray === 'function';
+
 const storage = localforage.createInstance({ name: 'SillyTavern_WebSearch' });
 const extensionPromptMarker = '___WebSearch___';
 
@@ -293,7 +296,19 @@ async function onWebSearchPrompt(chat, _maxContext, _abort, type) {
             const visitResult = await visitLinksAndAttachToMessage(searchQuery, links, images, messageId);
 
             if (visitResult && visitResult.file) {
-                triggerMessage.extra = Object.assign((triggerMessage.extra || {}), { file: visitResult.file });
+                if (!triggerMessage.extra) {
+                    triggerMessage.extra = {};
+                }
+                if (supportsMediaArrays) {
+                    if (!Array.isArray(triggerMessage.extra.files)) {
+                        triggerMessage.extra.files = [];
+                    }
+                    if (!triggerMessage.extra.files.includes(visitResult.file)) {
+                        triggerMessage.extra.files.push(visitResult.file);
+                    }
+                } else {
+                    triggerMessage.extra.file = visitResult.file;
+                }
                 triggerMessage.mes = await appendFileContent(triggerMessage, triggerMessage.mes);
             }
         }
@@ -538,21 +553,36 @@ async function visitLinksAndAttachToMessage(query, links, images, messageId) {
         return;
     }
 
-    if (!message.extra) {
+    if (!message.extra || typeof message.extra !== 'object') {
         message.extra = {};
     }
 
     if (extension_settings.websearch.include_images && Array.isArray(images) && images.length > 0) {
         try {
-            const alreadyHasImages = Array.isArray(message.extra.image_swipes) && message.extra.image_swipes.length > 0;
-            if (!alreadyHasImages) {
-                const imageSwipes = await visitImages(images);
-
-                if (imageSwipes.length > 0) {
-                    message.extra.title = query;
-                    message.extra.image = imageSwipes[0];
-                    message.extra.image_swipes = imageSwipes;
-                    message.extra.inline_image = true;
+            if (!supportsMediaArrays) {
+                const hasImage = Boolean(message.extra.image);
+                const hasImageSwipes = Array.isArray(message.extra.image_swipes) && message.extra.image_swipes.length > 0;
+                if (!hasImage && !hasImageSwipes) {
+                    const imageLinks = await visitImages(images);
+                    if (imageLinks.length > 0) {
+                        message.extra.title = query;
+                        message.extra.image = imageLinks[0];
+                        message.extra.image_swipes = imageLinks;
+                        message.extra.inline_image = true;
+                    }
+                }
+            }
+            if (supportsMediaArrays) {
+                const hasImages = Array.isArray(message.extra.images) && message.extra.images.length > 0;
+                const hasImageSwipes = Array.isArray(message.extra.image_swipes) && message.extra.image_swipes.length > 0;
+                if (!hasImages && !hasImageSwipes) {
+                    const imageLinks = await visitImages(images);
+                    if (imageLinks.length > 0) {
+                        message.extra.title = query;
+                        message.extra.images = [imageLinks[0]];
+                        message.extra.image_swipes = imageLinks;
+                        message.extra.inline_image = true;
+                    }
                 }
             }
             updateMessageMedia();
@@ -566,8 +596,13 @@ async function visitLinksAndAttachToMessage(query, links, images, messageId) {
         return;
     }
 
-    if (message?.extra?.file) {
+    if (!supportsMediaArrays && message.extra.file) {
         console.debug('WebSearch: message already has a file attachment');
+        return;
+    }
+
+    if (supportsMediaArrays && Array.isArray(message.extra.files) && message.extra.files.length > 0) {
+        console.debug('WebSearch: message already has file attachments');
         return;
     }
 
@@ -599,14 +634,23 @@ async function visitLinksAndAttachToMessage(query, links, images, messageId) {
                 return;
             }
 
-            message.extra.file = {
+            const file = {
                 url: fileUrl,
                 size: fileText.length,
                 name: fileName,
             };
 
+            if (supportsMediaArrays) {
+                if (!Array.isArray(message.extra.files)) {
+                    message.extra.files = [];
+                }
+                message.extra.files.push(file);
+            } else {
+                message.extra.file = file;
+            }
+
             updateMessageMedia();
-            return { fileContent: fileText, file: message.extra.file };
+            return { fileContent: fileText, file: file };
         }
     } catch (error) {
         console.error('WebSearch: failed to attach the file', error);
