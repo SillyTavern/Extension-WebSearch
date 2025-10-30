@@ -444,7 +444,7 @@ function processInputText(text) {
 function isAllowedUrl(link) {
     try {
         const url = new URL(link);
-        const isBlacklisted = extension_settings.websearch.visit_blacklist.some(y => url.hostname.includes(y));
+        const isBlacklisted = extension_settings.websearch.visit_blacklist.some(y => typeof y === 'string' && y.trim() && url.hostname.includes(y));
         if (isBlacklisted) {
             console.debug('WebSearch: blacklisted link', link);
         }
@@ -1645,7 +1645,7 @@ jQuery(async () => {
     });
     $('#websearch_visit_blacklist').val(extension_settings.websearch.visit_blacklist.join('\n'));
     $('#websearch_visit_blacklist').on('input', () => {
-        extension_settings.websearch.visit_blacklist = String($('#websearch_visit_blacklist').val()).split('\n');
+        extension_settings.websearch.visit_blacklist = String($('#websearch_visit_blacklist').val()).split('\n').map(x => x.trim()).filter(x => x.length > 0);
         saveSettingsDebounced();
     });
     $('#websearch_file_header').val(extension_settings.websearch.visit_file_header);
