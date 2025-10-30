@@ -1558,6 +1558,10 @@ jQuery(async () => {
         $('#websearch_tavily_settings').toggle(extension_settings.websearch.source === WEBSEARCH_SOURCES.TAVILY);
         $('#websearch_koboldcpp_settings').toggle(extension_settings.websearch.source === WEBSEARCH_SOURCES.KOBOLDCPP);
         $('#websearch_serper_settings').toggle(extension_settings.websearch.source === WEBSEARCH_SOURCES.SERPER);
+
+        $('#serpapi_key').toggleClass('success', !!secret_state[SECRET_KEYS.SERPAPI]);
+        $('#tavily_key').toggleClass('success', !!secret_state[SECRET_KEYS.TAVILY]);
+        $('#serper_key').toggleClass('success', !!secret_state[SECRET_KEYS.SERPER]);
     }
 
     const getContainer = () => $(document.getElementById('websearch_container') ?? document.getElementById('extensions_settings2'));
