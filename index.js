@@ -573,14 +573,13 @@ async function visitLinksAndAttachToMessage(query, links, images, messageId) {
                 }
             }
             if (supportsMediaArrays) {
-                const hasImages = Array.isArray(message.extra.images) && message.extra.images.length > 0;
-                const hasImageSwipes = Array.isArray(message.extra.image_swipes) && message.extra.image_swipes.length > 0;
-                if (!hasImages && !hasImageSwipes) {
+                const hasMedia = Array.isArray(message.extra.media) && message.extra.media.length > 0;
+                if (!hasMedia) {
                     const imageLinks = await visitImages(images);
                     if (imageLinks.length > 0) {
-                        message.extra.title = query;
-                        message.extra.images = [imageLinks[0]];
-                        message.extra.image_swipes = imageLinks;
+                        message.extra.media = imageLinks.map(url => ({ url: url, type: 'image', title: query }));
+                        message.extra.media_index = 0;
+                        message.extra.media_display = 'gallery';
                         message.extra.inline_image = true;
                     }
                 }
