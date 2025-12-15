@@ -19,6 +19,7 @@
                     <option value="serpapi">SerpApi</option>
                     <option value="serper">Serper</option>
                     <option value="tavily">Tavily</option>
+                    <option value="zai">Z.AI</option>
                 </select>
                 <div id="serpapi_settings">
                     <div class="flex-container alignItemsBaseline">
@@ -81,6 +82,13 @@
                     <span>
                         Must use version 1.18.1 or higher and have WebSearch option enabled.
                     </span>
+                </div>
+                <div id="websearch_zai_settings">
+                    <b>Hint:</b>
+                    <span>
+                        Set the API Key in the Chat Completion API connection settings.
+                    </span>
+                    <b>Will use Common API. Coding API is not supported!</b>
                 </div>
                 <label for="websearch_cache_lifetime">Cache Lifetime <small>(seconds)</small></label>
                 <input type="number" class="text_pole" id="websearch_cache_lifetime" value="">

@@ -26,6 +26,7 @@ const WEBSEARCH_SOURCES = {
     TAVILY: 'tavily',
     KOBOLDCPP: 'koboldcpp',
     SERPER: 'serper',
+    ZAI: 'zai',
 };
 
 const VISIT_TARGETS = {
@@ -194,6 +195,11 @@ async function isSearchAvailable() {
 
     if (extension_settings.websearch.source === WEBSEARCH_SOURCES.SERPER && !secret_state[SECRET_KEYS.SERPER]) {
         console.debug('WebSearch: no Serper key found');
+        return false;
+    }
+
+    if (extension_settings.websearch.source === WEBSEARCH_SOURCES.ZAI && !secret_state[SECRET_KEYS.ZAI]) {
+        console.debug('WebSearch: no Z.AI key found');
         return false;
     }
 
@@ -1134,6 +1140,42 @@ async function doSerperQuery(query) {
 }
 
 /**
+ * Performs a search query via Z.AI.
+ * @param {string} query Search query
+ * @returns {Promise<{textBits: string[], links: string[], images: string[]}>} Extracted text
+ */
+async function doZaiQuery(query) {
+    const textBits = [];
+    const links = [];
+    const images = [];
+
+    const result = await fetch('/api/search/zai', {
+        method: 'POST',
+        headers: getRequestHeaders(),
+        body: JSON.stringify({ query }),
+    });
+
+    if (!result.ok) {
+        console.debug('WebSearch: search request failed', result.statusText);
+        return;
+    }
+
+    const data = await result.json();
+
+    if (!Array.isArray(data?.search_result)) {
+        console.debug('WebSearch: invalid search results format');
+        return;
+    }
+
+    for (const item of data.search_result) {
+        links.push(item.link);
+        textBits.push(`${item.title}\n${item.content}`);
+    }
+
+    return { textBits, links, images };
+}
+
+/**
  * Performs a search query via SearXNG.
  * @param {string} query Search query
  * @returns {Promise<{textBits: string[], links: string[], images: string[]}>} Extracted text
@@ -1278,6 +1320,8 @@ async function performSearchRequest(query, options = { useCache: true }) {
                     return await doKoboldCppQuery(query);
                 case WEBSEARCH_SOURCES.SERPER:
                     return await doSerperQuery(query);
+                case WEBSEARCH_SOURCES.ZAI:
+                    return await doZaiQuery(query);
                 default:
                     throw new Error(`Unrecognized search source: ${extension_settings.websearch.source}`);
             }
@@ -1601,6 +1645,7 @@ jQuery(async () => {
         $('#websearch_tavily_settings').toggle(extension_settings.websearch.source === WEBSEARCH_SOURCES.TAVILY);
         $('#websearch_koboldcpp_settings').toggle(extension_settings.websearch.source === WEBSEARCH_SOURCES.KOBOLDCPP);
         $('#websearch_serper_settings').toggle(extension_settings.websearch.source === WEBSEARCH_SOURCES.SERPER);
+        $('#websearch_zai_settings').toggle(extension_settings.websearch.source === WEBSEARCH_SOURCES.ZAI);
 
         $('#serpapi_key').toggleClass('success', !!secret_state[SECRET_KEYS.SERPAPI]);
         $('#tavily_key').toggleClass('success', !!secret_state[SECRET_KEYS.TAVILY]);
