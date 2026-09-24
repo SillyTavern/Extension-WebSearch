@@ -27,6 +27,7 @@ const WEBSEARCH_SOURCES = {
     KOBOLDCPP: 'koboldcpp',
     SERPER: 'serper',
     ZAI: 'zai',
+    FIRECRAWL: 'firecrawl',
 };
 
 const VISIT_TARGETS = {
@@ -200,6 +201,11 @@ async function isSearchAvailable() {
 
     if (extension_settings.websearch.source === WEBSEARCH_SOURCES.ZAI && !secret_state[SECRET_KEYS.ZAI]) {
         console.debug('WebSearch: no Z.AI key found');
+        return false;
+    }
+
+    if (extension_settings.websearch.source === WEBSEARCH_SOURCES.FIRECRAWL && !secret_state[SECRET_KEYS.FIRECRAWL]) {
+        console.debug('WebSearch: no Firecrawl key found');
         return false;
     }
 
@@ -1176,6 +1182,42 @@ async function doZaiQuery(query) {
 }
 
 /**
+ * Performs a search query via Firecrawl.
+ * @param {string} query Search query
+ * @returns {Promise<{textBits: string[], links: string[], images: string[]}>} Extracted text
+ */
+async function doFirecrawlQuery(query) {
+    const textBits = [];
+    const links = [];
+    const images = [];
+
+    const result = await fetch('/api/search/firecrawl', {
+        method: 'POST',
+        headers: getRequestHeaders(),
+        body: JSON.stringify({ query }),
+    });
+
+    if (!result.ok) {
+        console.debug('WebSearch: search request failed', result.statusText);
+        return { textBits, links, images };
+    }
+
+    const data = await result.json();
+
+    if (!Array.isArray(data?.data?.web)) {
+        console.debug('WebSearch: invalid search results format');
+        return { textBits, links, images };
+    }
+
+    for (const item of data.data.web) {
+        links.push(item.url);
+        textBits.push([item.title, item.description].filter(x => x).join('\n'));
+    }
+
+    return { textBits, links, images };
+}
+
+/**
  * Performs a search query via SearXNG.
  * @param {string} query Search query
  * @returns {Promise<{textBits: string[], links: string[], images: string[]}>} Extracted text
@@ -1322,6 +1364,8 @@ async function performSearchRequest(query, options = { useCache: true }) {
                     return await doSerperQuery(query);
                 case WEBSEARCH_SOURCES.ZAI:
                     return await doZaiQuery(query);
+                case WEBSEARCH_SOURCES.FIRECRAWL:
+                    return await doFirecrawlQuery(query);
                 default:
                     throw new Error(`Unrecognized search source: ${extension_settings.websearch.source}`);
             }
@@ -1646,10 +1690,12 @@ jQuery(async () => {
         $('#websearch_koboldcpp_settings').toggle(extension_settings.websearch.source === WEBSEARCH_SOURCES.KOBOLDCPP);
         $('#websearch_serper_settings').toggle(extension_settings.websearch.source === WEBSEARCH_SOURCES.SERPER);
         $('#websearch_zai_settings').toggle(extension_settings.websearch.source === WEBSEARCH_SOURCES.ZAI);
+        $('#websearch_firecrawl_settings').toggle(extension_settings.websearch.source === WEBSEARCH_SOURCES.FIRECRAWL);
 
         $('#serpapi_key').toggleClass('success', !!secret_state[SECRET_KEYS.SERPAPI]);
         $('#tavily_key').toggleClass('success', !!secret_state[SECRET_KEYS.TAVILY]);
         $('#serper_key').toggleClass('success', !!secret_state[SECRET_KEYS.SERPER]);
+        $('#firecrawl_key').toggleClass('success', !!secret_state[SECRET_KEYS.FIRECRAWL]);
     }
 
     const getContainer = () => $(document.getElementById('websearch_container') ?? document.getElementById('extensions_settings2'));
@@ -1680,6 +1726,9 @@ jQuery(async () => {
     });
     $('#serper_key').on('click', async () => {
         await handleApiKeyManagement(SECRET_KEYS.SERPER, 'Serper', $('#serper_key'));
+    });
+    $('#firecrawl_key').on('click', async () => {
+        await handleApiKeyManagement(SECRET_KEYS.FIRECRAWL, 'Firecrawl', $('#firecrawl_key'));
     });
     $('#websearch_budget').val(extension_settings.websearch.budget);
     $('#websearch_budget').on('input', () => {
