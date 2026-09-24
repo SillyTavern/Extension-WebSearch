@@ -50,13 +50,21 @@ Requires an API key.
 
 Get the key here: <https://serper.dev/>
 
-## Z.AI
+### Z.AI
 
 Requires an API key. Not compatible with the Coding API subscription!
 
 Get the key here: <https://z.ai/manage-apikey/apikey-list/>
 
 Docs: <https://docs.z.ai/api-reference/tools/web-search>
+
+### Firecrawl
+
+Requires an API key.
+
+Get the key here: <https://www.firecrawl.dev/app/api-keys>
+
+Docs: <https://docs.firecrawl.dev/features/search>
 
 ## How to use
 
@@ -172,6 +180,11 @@ Example: /websearch links=off snippets=on how to make a sandwich
 5. Images.
 
 #### Z.AI
+
+1. Page titles.
+2. Page snippets.
+
+#### Firecrawl
 
 1. Page titles.
 2. Page snippets.
